@@ -8,6 +8,7 @@ st.set_page_config(layout="wide", page_title="Sistema MIAA 24/7")
 # --- CONEXIÓN ---
 @st.cache_resource
 def get_engines():
+    # Asegúrate de tener estas variables en tus Secrets de Streamlit
     eng_dic = create_engine(st.secrets["databases"]["url_dic"], pool_pre_ping=True, pool_recycle=1800)
     eng_scada = create_engine(st.secrets["databases"]["url_scada"], pool_pre_ping=True, pool_recycle=1800)
     return eng_dic, eng_scada
@@ -73,16 +74,23 @@ for _, row in df.iterrows():
 tab1, tab2 = st.tabs(["APAGADOS (Atención)", "ENCENDIDOS"])
 
 with tab1:
-    df_apg = pd.DataFrame(lista_apg)[["Pozo", "Fecha", "Hora", "Incidencia", "H_paro", "H_arranque", "Nivel", "Niv_Arr", "Niv_Par", "Estatus_Paro", "V_L1", "V_L2", "V_L3"]]
-    
-    def color_row(val):
-        color = ''
-        if 'incidencia' in str(val).lower(): color = '#FFD700'
-        elif 'desconocida' in str(val).lower(): color = '#FF4500'
-        elif 'no arranca' in str(val).lower(): color = '#FF4500'
-        return f'background-color: {color}'
+    if lista_apg:
+        df_apg = pd.DataFrame(lista_apg)[["Pozo", "Fecha", "Hora", "Incidencia", "H_paro", "H_arranque", "Nivel", "Niv_Arr", "Niv_Par", "Estatus_Paro", "V_L1", "V_L2", "V_L3"]]
+        
+        def color_row(val):
+            color = ''
+            if 'incidencia' in str(val).lower(): color = '#FFD700'
+            elif 'desconocida' in str(val).lower(): color = '#FF4500'
+            elif 'no arranca' in str(val).lower(): color = '#FF4500'
+            return f'background-color: {color}; color: black'
 
-    st.dataframe(df_apg.style.applymap(color_row, subset=['Estatus_Paro']), use_container_width=True)
+        # Usamos .map en lugar de applymap para compatibilidad con versiones nuevas
+        st.dataframe(df_apg.style.map(color_row, subset=['Estatus_Paro']), use_container_width=True)
+    else:
+        st.info("No hay pozos apagados actualmente.")
 
 with tab2:
-    st.dataframe(pd.DataFrame(lista_enc), use_container_width=True)
+    if lista_enc:
+        st.dataframe(pd.DataFrame(lista_enc), use_container_width=True)
+    else:
+        st.info("No hay pozos encendidos.")
