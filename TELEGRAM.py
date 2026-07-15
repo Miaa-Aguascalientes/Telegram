@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 from sqlalchemy import create_engine
-from datetime import time
+from datetime import time, datetime
 
 st.set_page_config(layout="wide", page_title="Sistema MIAA 24/7")
 
@@ -25,7 +25,6 @@ st.title("Sistema de Monitoreo MIAA 24/7")
 
 df_dic = pd.read_sql("SELECT * FROM Diccionario_de_pozos WHERE bomba != 'Sin telemetria'", ENGINE_DIC)
 
-# Carga de Incidencias
 try:
     query_inc = "SELECT NUM_POZO, DIAGNOSTICO_FALLA FROM vw_incidencias_en_pozos WHERE ESTATUS != 'Cerrada'"
     df_inc = pd.read_sql(query_inc, ENGINE_SCADA)
@@ -34,7 +33,6 @@ try:
 except:
     mapa_inc = {}
 
-# Carga de Datos SCADA
 tags = "', '".join(df_dic['bomba'].tolist())
 query = f"""
 SELECT r.NAME, h.VALUE, h.FECHA 
@@ -46,7 +44,6 @@ ORDER BY h.FECHA DESC
 """
 df = pd.read_sql(query, ENGINE_SCADA)
 
-# Carga de Auxiliares
 cols_aux = ['H_arranque', 'H_paro', 'nivel_tanque', 'nivel_arranque_tq', 'nivel_paro_tq', 'voltaje_L1', 'voltaje_L2', 'voltaje_L3']
 tags_aux = [str(t) for col in cols_aux for t in df_dic[col].dropna().unique()]
 query_aux = f"SELECT r.NAME, h.VALUE FROM VfiTagNumHistory_Ultimo h JOIN VfiTagRef r ON h.GATEID = r.GATEID WHERE r.NAME IN ('{"', '".join(tags_aux)}') AND h.FECHA = (SELECT MAX(FECHA) FROM VfiTagNumHistory_Ultimo WHERE GATEID = h.GATEID)"
@@ -68,18 +65,14 @@ for _, row in df.iterrows():
     val_n_par = float(mapa_aux.get(str(info['nivel_paro_tq']), 0) or 0)
     
     if row['VALUE'] == 0:
-        if inc != "Sin incidencia":
-            estatus = f"⚠️ {inc}"
-        elif val_n_arr > 0 and val_n_par > 0:
-            estatus = "✅ Normal" if (val_nivel >= val_n_arr or (val_n_par > val_nivel > val_n_arr)) else "❌ Desconocida"
-        else:
-            estatus = "❌ Desconocida"
+        estatus = f"⚠️ {inc}" if inc != "Sin incidencia" else ("✅ Normal" if (val_n_arr > 0 and val_n_par > 0 and (val_nivel >= val_n_arr or (val_n_par > val_nivel > val_n_arr))) else "❌ Desconocida")
         
         lista_apg.append({
             "Estatus_Paro": estatus,
             "Pozo": info['Pozos'], 
-            "Fecha": row['FECHA'].strftime('%d/%m/%y'), 
-            "Hora": row['FECHA'].strftime('%H:%M:%S'),
+            "Fecha": row['FECHA'].date(), # Guardamos el objeto fecha puro
+            "Hora": row['FECHA'].time(),   # Guardamos el objeto hora puro
+            "TS": row['FECHA'],            # Timestamp completo para ordenar
             "Incidencia": inc,
             "H_paro": convertir_a_hora(mapa_aux.get(str(info['H_paro']))),
             "H_arranque": convertir_a_hora(mapa_aux.get(str(info['H_arranque']))),
@@ -95,6 +88,16 @@ for _, row in df.iterrows():
 if lista_apg:
     df_final = pd.DataFrame(lista_apg)
     
+    # 1. ORDENAMIENTO: Usamos la columna auxiliar 'TS' (Timestamp) de más reciente a antiguo
+    df_final = df_final.sort_values(by='TS', ascending=False)
+    
+    # 2. Formateamos fecha y hora para visualización final
+    df_final['Fecha'] = df_final['Fecha'].apply(lambda x: x.strftime('%d/%m/%y'))
+    df_final['Hora'] = df_final['Hora'].apply(lambda x: x.strftime('%H:%M:%S'))
+    
+    # Eliminamos la columna auxiliar 'TS' antes de mostrar la tabla
+    df_final = df_final.drop(columns=['TS'])
+    
     def color_text(row):
         estatus = str(row['Estatus_Paro'])
         if '⚠️' in estatus: color = '#FFD700'
@@ -103,12 +106,11 @@ if lista_apg:
         else: color = 'inherit'
         return [f'color: {color}'] * len(row)
 
-    # height=800 hace la tabla mucho más alta
     st.dataframe(
         df_final.style.apply(color_text, axis=1), 
         use_container_width=True, 
         hide_index=True,
-        height=500 
+        height=800 
     )
 else:
     st.info("No hay pozos apagados.")
