@@ -23,7 +23,6 @@ def convertir_a_hora(valor):
 # --- PROCESAMIENTO ---
 st.title("Sistema de Monitoreo MIAA 24/7")
 
-# Carga de Diccionario
 df_dic = pd.read_sql("SELECT * FROM Diccionario_de_pozos WHERE bomba != 'Sin telemetria'", ENGINE_DIC)
 
 # Carga de Incidencias
@@ -57,7 +56,6 @@ mapa_aux = dict(zip(df_h['NAME'].astype(str), df_h['VALUE']))
 
 lista_apg = []
 
-# Función para formatear niveles (retorna vacío si es 0)
 def format_val(v):
     return f"{v:.2f}" if v > 0 else ""
 
@@ -66,7 +64,6 @@ for _, row in df.iterrows():
     pozo_key = str(info['Pozos']).replace('-', '').replace(' ', '')
     inc = mapa_inc.get(pozo_key, "Sin incidencia")
     
-    # Valores extraídos con seguridad
     val_nivel = float(mapa_aux.get(str(info['nivel_tanque']), 0) or 0)
     val_n_arr = float(mapa_aux.get(str(info['nivel_arranque_tq']), 0) or 0)
     val_n_par = float(mapa_aux.get(str(info['nivel_paro_tq']), 0) or 0)
@@ -84,6 +81,7 @@ for _, row in df.iterrows():
             estatus = "❌ Desconocida"
         
         lista_apg.append({
+            "Estatus_Paro": estatus,
             "Pozo": info['Pozos'], 
             "Fecha": row['FECHA'].strftime('%d/%m/%y'), 
             "Hora": row['FECHA'].strftime('%H:%M:%S'),
@@ -93,7 +91,6 @@ for _, row in df.iterrows():
             "Nivel": format_val(val_nivel),
             "Niv_Arr": format_val(val_n_arr),
             "Niv_Par": format_val(val_n_par),
-            "Estatus_Paro": estatus,
             "V_L1": int(float(mapa_aux.get(str(info['voltaje_L1']), 0) or 0)),
             "V_L2": int(float(mapa_aux.get(str(info['voltaje_L2']), 0) or 0)),
             "V_L3": int(float(mapa_aux.get(str(info['voltaje_L3']), 0) or 0))
@@ -103,16 +100,18 @@ for _, row in df.iterrows():
 if lista_apg:
     df_final = pd.DataFrame(lista_apg)
     
-    def color_row(val):
-        v = str(val)
-        if 'Parado por' in v or 'Incidencia' in v or 'Fuga' in v or 'Abierto' in v or 'Preventivo' in v or 'Desgaste' in v: 
-            return 'background-color: #FFD700; color: black'
-        if 'Normal' in v: 
-            return 'background-color: #2E7D32; color: white'
-        if 'Desconocida' in v: 
-            return 'background-color: #D32F2F; color: white'
-        return ''
+    # 1. Establecer el índice como 'Estatus_Paro' para quitar los números 0, 1, 2...
+    df_final.set_index('Estatus_Paro', inplace=True)
+    
+    # 2. Función de estilización
+    def color_row(row):
+        # Aplicamos estilo a toda la fila basándonos en el índice
+        estatus = row.name
+        if '⚠️' in estatus: return ['background-color: #FFD700; color: black'] * len(row)
+        if '✅' in estatus: return ['background-color: #2E7D32; color: white'] * len(row)
+        if '❌' in estatus: return ['background-color: #D32F2F; color: white'] * len(row)
+        return [''] * len(row)
 
-    st.dataframe(df_final.style.map(color_row, subset=['Estatus_Paro']), use_container_width=True)
+    st.dataframe(df_final.style.apply(color_row, axis=1), use_container_width=True)
 else:
     st.info("No hay pozos apagados.")
