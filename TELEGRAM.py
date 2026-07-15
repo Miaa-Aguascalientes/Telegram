@@ -86,13 +86,15 @@ while True:
             try:
                 valor = float(v)
                 return "Directo a red" if valor <= 0 else f"{valor:.2f}"
-            except (ValueError, TypeError): return "Directo a red"
+            except (ValueError, TypeError):
+                return "Directo a red"
 
         def format_param(v):
             try:
                 valor = float(v)
                 return f"{valor:.2f}" if valor > 0 else ""
-            except (ValueError, TypeError): return ""
+            except (ValueError, TypeError):
+                return ""
 
         for _, row in df.iterrows():
             df_match = df_dic[df_dic['bomba'] == row['NAME']]
@@ -103,9 +105,13 @@ while True:
             inc = mapa_inc.get(pozo_key, "Sin incidencia")
             
             data_row = {
-                "Pozo": info['Pozos'], "Fecha": row['FECHA'].date(), "Hora": row['FECHA'].time(),
-                "Incidencia": inc, "H_paro": convertir_a_hora(mapa_aux.get(str(info['H_paro']))), 
+                "Pozo": info['Pozos'], 
+                "Fecha": row['FECHA'].date(), 
+                "Hora": row['FECHA'].time(),
+                "Incidencia": inc, 
+                "H_paro": convertir_a_hora(mapa_aux.get(str(info['H_paro']))), 
                 "H_arranque": convertir_a_hora(mapa_aux.get(str(info['H_arranque']))),
+                # Aplicamos la función correcta a cada columna
                 "Nivel": format_nivel(mapa_aux.get(str(info['nivel_tanque']), 0)),
                 "Niv_Arr": format_param(mapa_aux.get(str(info['nivel_arranque_tq']), 0)),
                 "Niv_Par": format_param(mapa_aux.get(str(info['nivel_paro_tq']), 0)),
@@ -122,11 +128,15 @@ while True:
             else:
                 lista_enc.append(data_row)
 
+        # ORDENAMIENTO EXPLÍCITO DE AMBAS LISTAS
         df_final = pd.DataFrame(lista_apg).sort_values(by='TS', ascending=False).reset_index(drop=True) if lista_apg else pd.DataFrame()
         df_enc_full = pd.DataFrame(lista_enc).sort_values(by='TS', ascending=False).reset_index(drop=True) if lista_enc else pd.DataFrame()
         
+        # Validación para evitar KeyError en los indicadores
         cols_ind = st.columns(4)
         with cols_ind[0]: render_card("Total Apagados", len(df_final), "#FFFFFF", "🔴")
+        
+        # Verificamos si existe la columna antes de filtrar
         if not df_final.empty:
             with cols_ind[1]: render_card("Estatus Normal", len(df_final[df_final['Estatus_Paro'].str.contains('✅', na=False)]), "#00FF00", "✅")
             with cols_ind[2]: render_card("Por Incidencia", len(df_final[df_final['Estatus_Paro'].str.contains('⚠️', na=False)]), "#FFD700", "⚠️")
@@ -137,20 +147,6 @@ while True:
         
         st.markdown("<hr style='margin: 10px 0; border: 1px solid #00E5FF;'>", unsafe_allow_html=True)
         
-        # --- FUNCIÓN ESTILO CON COLOR Y CENTRADO ---
-        def estilo_total(row):
-            # Obtenemos el color base según el estatus
-            e = str(row.get('Estatus_Paro', ''))
-            c = '#FFD700' if '⚠️' in e else ('#00FF00' if '✅' in e else ('#FF0000' if '❌' in e else 'white'))
-            
-            estilos = [f'color: {c}; text-align: left;'] * len(row)
-            
-            for i, col in enumerate(row.index):
-                # Aplicamos centrado a los voltajes sin sobreescribir el color
-                if col in ['V_L1', 'V_L2', 'V_L3']:
-                    estilos[i] = f'color: {c}; text-align: center !important;'
-            return estilos
-        
         col_izq, col_der = st.columns([0.65, 0.35])
         
         with col_izq:
@@ -160,7 +156,13 @@ while True:
                 df_mostrar = df_final[cols_orden].copy()
                 df_mostrar['Fecha'] = df_mostrar['Fecha'].apply(lambda x: x.strftime('%d/%m/%y'))
                 df_mostrar['Hora'] = df_mostrar['Hora'].apply(lambda x: x.strftime('%H:%M:%S'))
-                st.dataframe(df_mostrar.style.apply(estilo_total, axis=1), use_container_width=True, hide_index=True)
+                
+                def color_fila(row):
+                    e = str(row['Estatus_Paro'])
+                    c = '#FFD700' if '⚠️' in e else ('#00FF00' if '✅' in e else ('#FF0000' if '❌' in e else 'inherit'))
+                    return [f'color: {c}'] * len(row)
+
+                st.dataframe(df_mostrar.style.apply(color_fila, axis=1), use_container_width=True, hide_index=True)
             else: st.info("No hay pozos apagados.")
 
         with col_der:
@@ -169,7 +171,7 @@ while True:
                 df_enc = df_enc_full.drop(columns=['TS', 'Incidencia'], errors='ignore')
                 df_enc['Fecha'] = df_enc['Fecha'].apply(lambda x: x.strftime('%d/%m/%y'))
                 df_enc['Hora'] = df_enc['Hora'].apply(lambda x: x.strftime('%H:%M:%S'))
-                st.dataframe(df_enc.style.apply(estilo_total, axis=1), use_container_width=True, hide_index=True)
+                st.dataframe(df_enc, use_container_width=True, hide_index=True)
             else: st.info("No hay pozos operando.")
     
     t.sleep(30)
