@@ -68,9 +68,11 @@ for _, row in df.iterrows():
     val_n_arr = float(mapa_aux.get(info['nivel_arranque_tq'], 0) or 0)
     val_n_par = float(mapa_aux.get(info['nivel_paro_tq'], 0) or 0)
     
+    def format_val(v):
+        return f"{v:.2f}" if v > 0 else ""
+
     if row['VALUE'] == 0:
-        # LÓGICA DE ESTATUS CORREGIDA:
-        # Si no hay niveles (todos son 0), no puede ser Normal.
+        # Lógica de estatus...
         if inc != "Sin incidencia":
             estatus = "⚠️ Parado por incidencia"
         elif (val_nivel > 0 or val_n_arr > 0 or val_n_par > 0) and (val_nivel >= val_n_arr or (val_n_par > val_nivel > val_n_arr)):
@@ -85,9 +87,10 @@ for _, row in df.iterrows():
             "Incidencia": inc,
             "H_paro": convertir_a_hora(get_val('H_paro')),
             "H_arranque": convertir_a_hora(get_val('H_arranque')),
-            "Nivel": f"{val_nivel:.2f}",
-            "Niv_Arr": f"{val_n_arr:.2f}",
-            "Niv_Par": f"{val_n_par:.2f}",
+            # Aplicamos el formato para ocultar ceros
+            "Nivel": format_val(val_nivel),
+            "Niv_Arr": format_val(val_n_arr),
+            "Niv_Par": format_val(val_n_par),
             "Estatus_Paro": estatus,
             "V_L1": int(float(get_val('voltaje_L1') or 0)),
             "V_L2": int(float(get_val('voltaje_L2') or 0)),
