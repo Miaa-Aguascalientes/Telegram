@@ -40,7 +40,7 @@ def convertir_a_hora(valor):
 col1, col2 = st.columns([1, 10])
 with col1:
     st.markdown('<div class="logo-container">', unsafe_allow_html=True)
-    st.image("https://raw.githubusercontent.com/Miaa-Aguascalientes/Logos/38504978c8f77a4dac38ad476f74dbdee6af2cad/LogoMIAA.svg", width=150)
+    st.image("https://raw.githubusercontent.com/Miaa-Aguascalientes/Logos/38504978c8f77a4dac38ad476f74dbdee6af2cad/LogoMIAA.svg", width=200)
     st.markdown('</div>', unsafe_allow_html=True)
 with col2:
     st.markdown('<h1 class="custom-title">Sistema de Monitoreo MIAA 24/7</h1>', unsafe_allow_html=True)
