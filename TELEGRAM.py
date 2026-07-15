@@ -1,9 +1,13 @@
 import streamlit as st
 import pandas as pd
 from sqlalchemy import create_engine
-from datetime import time, datetime
+from datetime import time
 
-st.set_page_config(layout="wide", page_title="Sistema MIAA 24/7")
+st.set_page_config(
+    layout="wide", 
+    page_title="Sistema MIAA 24/7", 
+    page_icon="https://www.miaa.mx/favicon.ico"
+)
 
 # --- CONEXIÓN ---
 @st.cache_resource
@@ -70,9 +74,9 @@ for _, row in df.iterrows():
         lista_apg.append({
             "Estatus_Paro": estatus,
             "Pozo": info['Pozos'], 
-            "Fecha": row['FECHA'].date(), # Guardamos el objeto fecha puro
-            "Hora": row['FECHA'].time(),   # Guardamos el objeto hora puro
-            "TS": row['FECHA'],            # Timestamp completo para ordenar
+            "Fecha": row['FECHA'].date(),
+            "Hora": row['FECHA'].time(),
+            "TS": row['FECHA'],
             "Incidencia": inc,
             "H_paro": convertir_a_hora(mapa_aux.get(str(info['H_paro']))),
             "H_arranque": convertir_a_hora(mapa_aux.get(str(info['H_arranque']))),
@@ -88,14 +92,9 @@ for _, row in df.iterrows():
 if lista_apg:
     df_final = pd.DataFrame(lista_apg)
     
-    # 1. ORDENAMIENTO: Usamos la columna auxiliar 'TS' (Timestamp) de más reciente a antiguo
     df_final = df_final.sort_values(by='TS', ascending=False)
-    
-    # 2. Formateamos fecha y hora para visualización final
     df_final['Fecha'] = df_final['Fecha'].apply(lambda x: x.strftime('%d/%m/%y'))
     df_final['Hora'] = df_final['Hora'].apply(lambda x: x.strftime('%H:%M:%S'))
-    
-    # Eliminamos la columna auxiliar 'TS' antes de mostrar la tabla
     df_final = df_final.drop(columns=['TS'])
     
     def color_text(row):
