@@ -25,21 +25,21 @@ st.title("Sistema de Monitoreo MIAA 24/7")
 
 # Consultas
 df_dic = pd.read_sql("SELECT * FROM Diccionario_de_pozos WHERE bomba != 'Sin telemetria'", ENGINE_DIC)
-df_inc = pd.read_sql("SELECT NUM_POZO, DIAGNOSTICO_FALLA FROM vw_incidencias_en_pozos WHERE ESTATUS != 'Cerrada'", ENGINE_SCADA)
-mapa_inc = dict(zip(df_inc['NUM_POZO'].str.replace('-', ''), df_inc['DIAGNOSTICO_FALLA']))
+try:
+    query_inc = "SELECT NUM_POZO, DIAGNOSTICO_FALLA FROM vw_incidencias_en_pozos WHERE ESTATUS != 'Cerrada' ORDER BY FECHA_INICIO DESC"
+    df_inc = pd.read_sql(query_inc, ENGINE_SCADA)
+    mapa_inc = dict(zip(df_inc['NUM_POZO'].str.replace('-', ''), df_inc['DIAGNOSTICO_FALLA']))
+except:
+    mapa_inc = {}
 
 tags = "', '".join(df_dic['bomba'].tolist())
 query = f"SELECT r.NAME, h.VALUE, h.FECHA FROM VfiTagNumHistory_Ultimo h JOIN VfiTagRef r ON h.GATEID = r.GATEID WHERE r.NAME IN ('{tags}') AND h.FECHA = (SELECT MAX(FECHA) FROM VfiTagNumHistory_Ultimo WHERE GATEID = h.GATEID)"
 df = pd.read_sql(query, ENGINE_SCADA)
 
-# Auxiliares (Incluimos todas las columnas necesarias)
+# Auxiliares
 cols_aux = ['H_arranque', 'H_paro', 'nivel_tanque', 'nivel_arranque_tq', 'nivel_paro_tq', 'voltaje_L1', 'voltaje_L2', 'voltaje_L3']
-lista_aux_tags = []
-for col in cols_aux:
-    lista_aux_tags.extend(df_dic[col].dropna().tolist())
-lista_aux_tags = "', '".join(list(set(lista_aux_tags)))
-
-df_h = pd.read_sql(f"SELECT r.NAME, h.VALUE FROM VfiTagNumHistory_Ultimo h JOIN VfiTagRef r ON h.GATEID = r.GATEID WHERE r.NAME IN ('{lista_aux_tags}') AND h.FECHA = (SELECT MAX(FECHA) FROM VfiTagNumHistory_Ultimo WHERE GATEID = h.GATEID)", ENGINE_SCADA)
+lista_aux_tags = list(set([t for col in cols_aux for t in df_dic[col].dropna().tolist()]))
+df_h = pd.read_sql(f"SELECT r.NAME, h.VALUE FROM VfiTagNumHistory_Ultimo h JOIN VfiTagRef r ON h.GATEID = r.GATEID WHERE r.NAME IN ('{', '.join([f'\"{t}\"' for t in lista_aux_tags])}') AND h.FECHA = (SELECT MAX(FECHA) FROM VfiTagNumHistory_Ultimo WHERE GATEID = h.GATEID)", ENGINE_SCADA)
 mapa_aux = dict(zip(df_h['NAME'], df_h['VALUE']))
 
 lista_apg, lista_enc = [], []
@@ -49,24 +49,28 @@ for _, row in df.iterrows():
     pozo = info['Pozos']
     inc = mapa_inc.get(pozo.replace('-', ''), "Sin incidencia")
     
-    # Datos completos mapeados
+    # FORMATO APLICADO: Niveles con 2 decimales, Voltajes como enteros (sin decimales)
+    nivel = round(float(mapa_aux.get(info['nivel_tanque'], 0)), 2)
+    niv_arr = round(float(mapa_aux.get(info['nivel_arranque_tq'], 0)), 2)
+    niv_par = round(float(mapa_aux.get(info['nivel_paro_tq'], 0)), 2)
+    
     fila = {
         "Pozo": pozo, "Fecha": row['FECHA'].strftime('%d/%m/%y'), "Hora": row['FECHA'].strftime('%H:%M:%S'),
         "Incidencia": inc,
         "H_paro": convertir_a_hora(mapa_aux.get(info['H_paro'], 0)),
         "H_arranque": convertir_a_hora(mapa_aux.get(info['H_arranque'], 0)),
-        "Nivel": float(mapa_aux.get(info['nivel_tanque'], 0)),
-        "Niv_Arr": float(mapa_aux.get(info['nivel_arranque_tq'], 0)),
-        "Niv_Par": float(mapa_aux.get(info['nivel_paro_tq'], 0)),
-        "V_L1": float(mapa_aux.get(info['voltaje_L1'], 0)),
-        "V_L2": float(mapa_aux.get(info['voltaje_L2'], 0)),
-        "V_L3": float(mapa_aux.get(info['voltaje_L3'], 0))
+        "Nivel": f"{nivel:.2f}",
+        "Niv_Arr": f"{niv_arr:.2f}",
+        "Niv_Par": f"{niv_par:.2f}",
+        "V_L1": int(float(mapa_aux.get(info['voltaje_L1'], 0))),
+        "V_L2": int(float(mapa_aux.get(info['voltaje_L2'], 0))),
+        "V_L3": int(float(mapa_aux.get(info['voltaje_L3'], 0)))
     }
 
     if row['VALUE'] == 0:
         estatus = "❌ Desconocida"
         if inc != "Sin incidencia": estatus = "⚠️ Parado por incidencia"
-        elif fila['Nivel'] < (fila['Niv_Arr'] * 0.3): estatus = "No arranca con su condición de tanque"
+        elif nivel < (niv_arr * 0.3): estatus = "No arranca con su condición de tanque"
         
         fila["Estatus_Paro"] = estatus
         lista_apg.append(fila)
@@ -81,10 +85,7 @@ with tab1:
         df_apg = pd.DataFrame(lista_apg)[["Pozo", "Fecha", "Hora", "Incidencia", "H_paro", "H_arranque", "Nivel", "Niv_Arr", "Niv_Par", "Estatus_Paro", "V_L1", "V_L2", "V_L3"]]
         
         def color_row(val):
-            color = ''
-            if 'incidencia' in str(val).lower(): color = '#FFD700'
-            elif 'desconocida' in str(val).lower(): color = '#FF4500'
-            elif 'no arranca' in str(val).lower(): color = '#FF4500'
+            color = '#FFD700' if 'incidencia' in str(val).lower() else '#FF4500'
             return f'background-color: {color}; color: black'
 
         st.dataframe(df_apg.style.map(color_row, subset=['Estatus_Paro']), use_container_width=True)
