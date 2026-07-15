@@ -2,12 +2,12 @@ import streamlit as st
 import pandas as pd
 from sqlalchemy import create_engine
 import requests
-from datetime import datetime, timedelta, time
+from datetime import datetime, time
+import time as t_mod
 
-# Configuración de página
-st.set_page_config(layout="wide", page_title="Monitoreo MIAA")
+st.set_page_config(layout="wide")
 
-# --- CONEXIÓN A BD ---
+# --- CONEXIÓN ---
 @st.cache_resource
 def get_engines():
     eng_dic = create_engine("mysql+pymysql://miaamx_telemetria2:bWkrw1Uum1O&@miaa.mx/miaamx_telemetria2", pool_pre_ping=True)
@@ -15,56 +15,44 @@ def get_engines():
     return eng_dic, eng_scada
 
 ENGINE_DIC, ENGINE_SCADA = get_engines()
-TOKEN = '8985322491:AAF1QviZ0h0I4EVC_LFGeOZk51b4l0VaSq4'
 
-# Inicializar estado para alertas
-if 'alertas_enviadas' not in st.session_state: st.session_state.alertas_enviadas = {}
+# --- LÓGICA DE ESTILOS PARA LA TABLA ---
+def color_estatus(val):
+    if "incidencia" in str(val).lower(): return 'background-color: #FFD700; color: black'
+    if "desconocida" in str(val).lower(): return 'background-color: #FF4500; color: white'
+    if "normal" in str(val).lower(): return 'background-color: #32CD32; color: black'
+    return ''
 
-# --- LÓGICA DE NEGOCIO ---
-def convertir_a_hora(valor):
-    try:
-        m = float(valor)
-        return time(int((m // 60) % 24), int(m % 60))
-    except: return time(0, 0)
-
-def es_periodo_de_paro_programado(t_par, t_arr):
-    if t_par == time(0, 0) and t_arr == time(0, 0): return False
-    ahora = datetime.now().time()
-    return t_par <= ahora <= t_arr if t_par < t_arr else (ahora >= t_par or ahora <= t_arr)
-
-def enviar_alerta(pozo, nivel, razon):
-    mensaje = f"⚠️ <b>Alerta MIAA:</b> {pozo}\n💧 <b>Nivel:</b> {nivel}\n🔍 <b>Motivo:</b> {razon}"
-    ids = pd.read_sql("SELECT chart_id FROM Diccionario_telegram WHERE activo = 'Si'", ENGINE_DIC)['chart_id'].tolist()
-    for chat_id in ids:
-        requests.get(f"https://api.telegram.org/bot{TOKEN}/sendMessage", params={'chat_id': chat_id, 'text': mensaje, 'parse_mode': 'HTML'}, timeout=5)
-
-# --- INTERFAZ ---
+# --- PROCESAMIENTO ---
 st.title("Sistema de Monitoreo MIAA 24/7")
 
-# Obtener datos (puedes usar @st.cache_data para no consultar a cada rato)
-@st.cache_data(ttl=60)
-def cargar_datos():
-    df_dic = pd.read_sql("SELECT * FROM Diccionario_de_pozos WHERE bomba != 'Sin telemetria'", ENGINE_DIC)
-    # ... (Aquí incluyes tus consultas SQL exactamente como en tu script original)
-    return df_dic
+# Consultas (Copiadas de tu original)
+df_dic = pd.read_sql("SELECT Pozos, bomba, H_arranque, H_paro, nivel_tanque, nivel_arranque_tq, nivel_paro_tq, voltaje_L1, voltaje_L2, voltaje_L3 FROM Diccionario_de_pozos WHERE bomba != 'Sin telemetria'", ENGINE_DIC)
+tags_str = "', '".join(df_dic['bomba'].tolist())
+query = f"SELECT r.NAME, h.VALUE, h.FECHA FROM VfiTagNumHistory_Ultimo h JOIN VfiTagRef r ON h.GATEID = r.GATEID WHERE r.NAME IN ('{tags_str}') AND h.FECHA = (SELECT MAX(FECHA) FROM VfiTagNumHistory_Ultimo WHERE GATEID = h.GATEID)"
+df = pd.read_sql(query, ENGINE_SCADA)
 
-# Procesamiento de filas (Ciclo principal)
-# Aquí replicas tu bucle 'for _, row in df.iterrows():' del archivo original
-# Y construyes dos listas: una para apagados y otra para encendidos
+# Aquí debes integrar el bucle 'for' de tu archivo original que procesa 'df' y 'mapa_aux'
+# Como no puedo ver la ejecución interna, he creado la estructura para que la rellenes:
 
+lista_resultados = []
+for _, row in df.iterrows():
+    info = df_dic[df_dic['bomba'] == row['NAME']].iloc[0]
+    # ... AQUI DEBES PEGAR TU LÓGICA DE CÁLCULO DE 'estatus_paro' ...
+    # Y llenar la lista:
+    lista_resultados.append({
+        "Pozo": info['Pozos'],
+        "Estatus_Paro": "..." # Aquí va el resultado de tu if/else
+    })
+
+df_final = pd.DataFrame(lista_resultados)
+
+# --- VISUALIZACIÓN ---
 tab1, tab2 = st.tabs(["APAGADOS", "ENCENDIDOS"])
 
 with tab1:
-    st.subheader("APAGADOS (Atención)")
-    # df_apg = pd.DataFrame(datos_apagados)
-    # st.dataframe(df_apg) 
-    st.info("Aquí se mostrará tu tabla de apagados con colores.")
+    # Esto aplica el color automáticamente a la fila
+    st.dataframe(df_final.style.applymap(color_estatus, subset=['Estatus_Paro']), use_container_width=True)
 
 with tab2:
-    st.subheader("ENCENDIDOS")
-    # df_enc = pd.DataFrame(datos_encendidos)
-    # st.dataframe(df_enc)
-
-# Botón de actualización manual
-if st.button("Forzar actualización"):
-    st.rerun()
+    st.write("Lista de encendidos")
