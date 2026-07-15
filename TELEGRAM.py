@@ -63,10 +63,14 @@ for _, row in df.iterrows():
     
     def get_val(c): return mapa_aux.get(str(info.get(c)))
     
-    # Obtenemos valores con manejo de nulos (default 0)
-    nv = float(val_nivel or 0)
-    arr = float(val_n_arr or 0)
-    par = float(val_n_par or 0)
+    val_nivel = float(mapa_aux.get(str(info['nivel_tanque']), 0) or 0)
+    val_n_arr = float(mapa_aux.get(str(info['nivel_arranque_tq']), 0) or 0)
+    val_n_par = float(mapa_aux.get(str(info['nivel_paro_tq']), 0) or 0)
+    
+    # Aseguramos que la comparación sea contra float explícito
+    nv = float(val_nivel)
+    arr = float(val_n_arr)
+    par = float(val_n_par)
 
     if row['VALUE'] == 0:
         # 1. Prioridad: Incidencia registrada
