@@ -23,12 +23,10 @@ def convertir_a_hora(valor):
 # --- PROCESAMIENTO ---
 st.title("Sistema de Monitoreo MIAA 24/7")
 
-# 1. Carga del Diccionario
 df_dic = pd.read_sql("SELECT * FROM Diccionario_de_pozos WHERE bomba != 'Sin telemetria'", ENGINE_DIC)
 
-# 2. Carga de Incidencias (CORREGIDO: Eliminé FECHA_INICIO del ORDER BY)
+# Carga de Incidencias
 try:
-    # Si la vista no tiene FECHA_INICIO, ordenamos por otra columna o simplemente quitamos el ORDER BY
     query_inc = "SELECT NUM_POZO, DIAGNOSTICO_FALLA FROM vw_incidencias_en_pozos WHERE ESTATUS != 'Cerrada'"
     df_inc = pd.read_sql(query_inc, ENGINE_SCADA)
     df_inc['KEY'] = df_inc['NUM_POZO'].astype(str).str.replace(r'[- ]', '', regex=True)
@@ -37,7 +35,7 @@ except Exception as e:
     st.error(f"Error al cargar la tabla de incidencias: {e}")
     mapa_inc = {}
 
-# 3. Carga de Datos SCADA (Ordenados por fecha)
+# Carga de Datos SCADA (Ordenados por fecha más reciente)
 tags = "', '".join(df_dic['bomba'].tolist())
 query = f"""
 SELECT r.NAME, h.VALUE, h.FECHA 
@@ -49,7 +47,7 @@ ORDER BY h.FECHA DESC
 """
 df = pd.read_sql(query, ENGINE_SCADA)
 
-# 4. Carga de Auxiliares
+# Carga de Auxiliares
 cols_aux = ['H_arranque', 'H_paro', 'nivel_tanque', 'nivel_arranque_tq', 'nivel_paro_tq', 'voltaje_L1', 'voltaje_L2', 'voltaje_L3']
 tags_aux = [str(t) for col in cols_aux for t in df_dic[col].dropna().unique()]
 query_aux = f"SELECT r.NAME, h.VALUE FROM VfiTagNumHistory_Ultimo h JOIN VfiTagRef r ON h.GATEID = r.GATEID WHERE r.NAME IN ('{"', '".join(tags_aux)}') AND h.FECHA = (SELECT MAX(FECHA) FROM VfiTagNumHistory_Ultimo WHERE GATEID = h.GATEID)"
@@ -58,7 +56,6 @@ mapa_aux = dict(zip(df_h['NAME'].astype(str), df_h['VALUE']))
 
 lista_apg = []
 
-# 5. Procesamiento de filas
 for _, row in df.iterrows():
     info = df_dic[df_dic['bomba'] == row['NAME']].iloc[0]
     pozo_key = str(info['Pozos']).replace('-', '').replace(' ', '')
@@ -71,9 +68,14 @@ for _, row in df.iterrows():
     val_n_par = float(mapa_aux.get(info['nivel_paro_tq'], 0))
     
     if row['VALUE'] == 0:
-        # Lógica de Estatus
+        # LÓGICA DE ESTATUS CORREGIDA:
+        # 1. Si hay incidencia, es Amarillo
+        # 2. Si el nivel es mayor al de arranque (tanque lleno/suficiente), es Normal (Verde)
+        # 3. Si el nivel está entre arranque y paro, es Normal (Verde)
         if inc != "Sin incidencia":
             estatus = "⚠️ Parado por incidencia"
+        elif val_nivel >= val_n_arr:
+            estatus = "✅ Normal"
         elif val_n_par > val_nivel > val_n_arr:
             estatus = "✅ Normal"
         else:
