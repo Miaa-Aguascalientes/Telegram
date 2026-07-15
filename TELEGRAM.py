@@ -23,6 +23,7 @@ def convertir_a_hora(valor):
 # --- PROCESAMIENTO ---
 st.title("Sistema de Monitoreo MIAA 24/7")
 
+# Carga de Diccionario
 df_dic = pd.read_sql("SELECT * FROM Diccionario_de_pozos WHERE bomba != 'Sin telemetria'", ENGINE_DIC)
 
 # Carga de Incidencias
@@ -35,7 +36,7 @@ except Exception as e:
     st.error(f"Error al cargar incidencias: {e}")
     mapa_inc = {}
 
-# Carga de SCADA
+# Carga de Datos SCADA
 tags = "', '".join(df_dic['bomba'].tolist())
 query = f"""
 SELECT r.NAME, h.VALUE, h.FECHA 
@@ -56,33 +57,29 @@ mapa_aux = dict(zip(df_h['NAME'].astype(str), df_h['VALUE']))
 
 lista_apg = []
 
+# Función para formatear niveles (retorna vacío si es 0)
+def format_val(v):
+    return f"{v:.2f}" if v > 0 else ""
+
 for _, row in df.iterrows():
     info = df_dic[df_dic['bomba'] == row['NAME']].iloc[0]
     pozo_key = str(info['Pozos']).replace('-', '').replace(' ', '')
     inc = mapa_inc.get(pozo_key, "Sin incidencia")
     
-    def get_val(c): return mapa_aux.get(str(info.get(c)))
-    
+    # Valores extraídos con seguridad
     val_nivel = float(mapa_aux.get(str(info['nivel_tanque']), 0) or 0)
     val_n_arr = float(mapa_aux.get(str(info['nivel_arranque_tq']), 0) or 0)
     val_n_par = float(mapa_aux.get(str(info['nivel_paro_tq']), 0) or 0)
     
-    # Aseguramos que la comparación sea contra float explícito
-    nv = float(val_nivel)
-    arr = float(val_n_arr)
-    par = float(val_n_par)
-
     if row['VALUE'] == 0:
-        # 1. Prioridad: Incidencia registrada
+        # Lógica de Estatus
         if inc != "Sin incidencia":
-            estatus = "⚠️ Parado por incidencia"
-        # 2. Si no hay incidencia, verificamos si existe configuración de niveles (arr > 0 y par > 0)
-        elif arr > 0 and par > 0:
-            if nv >= arr or (par > nv > arr):
+            estatus = f"⚠️ {inc}"
+        elif val_n_arr > 0 and val_n_par > 0:
+            if val_nivel >= val_n_arr or (val_n_par > val_nivel > val_n_arr):
                 estatus = "✅ Normal"
             else:
                 estatus = "❌ Desconocida"
-        # 3. Si no hay niveles y tampoco incidencia, es Desconocida
         else:
             estatus = "❌ Desconocida"
         
@@ -91,16 +88,15 @@ for _, row in df.iterrows():
             "Fecha": row['FECHA'].strftime('%d/%m/%y'), 
             "Hora": row['FECHA'].strftime('%H:%M:%S'),
             "Incidencia": inc,
-            "H_paro": convertir_a_hora(get_val('H_paro')),
-            "H_arranque": convertir_a_hora(get_val('H_arranque')),
-            # Aplicamos el formato para ocultar ceros
+            "H_paro": convertir_a_hora(mapa_aux.get(str(info['H_paro']))),
+            "H_arranque": convertir_a_hora(mapa_aux.get(str(info['H_arranque']))),
             "Nivel": format_val(val_nivel),
             "Niv_Arr": format_val(val_n_arr),
             "Niv_Par": format_val(val_n_par),
             "Estatus_Paro": estatus,
-            "V_L1": int(float(get_val('voltaje_L1') or 0)),
-            "V_L2": int(float(get_val('voltaje_L2') or 0)),
-            "V_L3": int(float(get_val('voltaje_L3') or 0))
+            "V_L1": int(float(mapa_aux.get(str(info['voltaje_L1']), 0) or 0)),
+            "V_L2": int(float(mapa_aux.get(str(info['voltaje_L2']), 0) or 0)),
+            "V_L3": int(float(mapa_aux.get(str(info['voltaje_L3']), 0) or 0))
         })
 
 # --- VISUALIZACIÓN ---
@@ -109,9 +105,12 @@ if lista_apg:
     
     def color_row(val):
         v = str(val)
-        if 'Parado por incidencia' in v: return 'background-color: #FFD700; color: black'
-        if 'Normal' in v: return 'background-color: #2E7D32; color: white'
-        if 'Desconocida' in v: return 'background-color: #D32F2F; color: white'
+        if 'Parado por' in v or 'Incidencia' in v or 'Fuga' in v or 'Abierto' in v or 'Preventivo' in v or 'Desgaste' in v: 
+            return 'background-color: #FFD700; color: black'
+        if 'Normal' in v: 
+            return 'background-color: #2E7D32; color: white'
+        if 'Desconocida' in v: 
+            return 'background-color: #D32F2F; color: white'
         return ''
 
     st.dataframe(df_final.style.map(color_row, subset=['Estatus_Paro']), use_container_width=True)
