@@ -110,7 +110,9 @@ while True:
         with c4: render_card("Desconocida", len(df_final[df_final['Estatus_Paro'].str.contains('❌', na=False)]), "#FF0000", "❌")
         
         st.markdown("<br>", unsafe_allow_html=True)
-        col_izq, col_der = st.columns(2)
+        
+        # Columnas ajustadas 65% - 35%
+        col_izq, col_der = st.columns([0.65, 0.35])
         
         with col_izq:
             st.subheader("🔴 Pozos Apagados")
@@ -120,7 +122,6 @@ while True:
                 df_mostrar['Fecha'] = df_mostrar['Fecha'].apply(lambda x: x.strftime('%d/%m/%y'))
                 df_mostrar['Hora'] = df_mostrar['Hora'].apply(lambda x: x.strftime('%H:%M:%S'))
                 
-                # FUNCIÓN DE COLOR CORREGIDA Y SEGURA
                 def color_fila(row):
                     e = str(row['Estatus_Paro'])
                     c = '#FFD700' if '⚠️' in e else ('#00FF00' if '✅' in e else ('#FF0000' if '❌' in e else 'inherit'))
