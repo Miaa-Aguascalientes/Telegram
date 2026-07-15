@@ -24,12 +24,18 @@ def convertir_a_hora(valor):
         return time(int((m // 60) % 24), int(m % 60))
     except: return time(0, 0)
 
-# --- CABECERA Y LOGO ---
-col1, col2 = st.columns([5, 1])
+# --- CABECERA ---
+# Usamos un contenedor para alinear verticalmente el título y el logo
+col1, col2 = st.columns([6, 1])
 with col1:
     st.title("Sistema de Monitoreo MIAA 24/7")
 with col2:
-    st.image("https://raw.githubusercontent.com/Miaa-Aguascalientes/Logos/38504978c8f77a4dac38ad476f74dbdee6af2cad/LogoMIAA.svg", width=150)
+    # Usamos st.write con HTML para forzar la alineación a la derecha
+    st.markdown("""
+    <div style="display: flex; justify-content: flex-end; align-items: center; height: 80px;">
+        <img src="https://raw.githubusercontent.com/Miaa-Aguascalientes/Logos/38504978c8f77a4dac38ad476f74dbdee6af2cad/LogoMIAA.svg" width="120">
+    </div>
+    """, unsafe_allow_html=True)
 
 # --- PROCESAMIENTO ---
 df_dic = pd.read_sql("SELECT * FROM Diccionario_de_pozos WHERE bomba != 'Sin telemetria'", ENGINE_DIC)
