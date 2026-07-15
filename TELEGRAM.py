@@ -57,7 +57,6 @@ while True:
         # --- LÓGICA DE DATOS ---
         df_dic = pd.read_sql("SELECT * FROM Diccionario_de_pozos WHERE bomba != 'Sin telemetria'", ENGINE_DIC)
         
-        # Inicialización segura de diccionarios
         mapa_inc = {}
         try:
             query_inc = "SELECT NUM_POZO, DIAGNOSTICO_FALLA FROM vw_incidencias_en_pozos WHERE ESTATUS != 'Cerrada'"
@@ -107,16 +106,24 @@ while True:
                 lista_enc.append(data_row)
 
         # --- VISUALIZACIÓN ---
+        def color_text_apg(row):
+            e = str(row['Estatus'])
+            c = '#FFD700' if '⚠️' in e else '#FF0000'
+            return [f'color: {c}'] * len(row)
+
         c_left, c_right = st.columns(2)
         
         with c_left:
             st.subheader("🔴 Pozos Apagados")
-            if lista_apg: st.dataframe(pd.DataFrame(lista_apg), use_container_width=True, hide_index=True)
+            if lista_apg: 
+                df_apg = pd.DataFrame(lista_apg)
+                st.dataframe(df_apg.style.apply(color_text_apg, axis=1), use_container_width=True, hide_index=True)
             else: st.info("Ninguno")
                 
         with c_right:
             st.subheader("🟢 Pozos Encendidos")
-            if lista_enc: st.dataframe(pd.DataFrame(lista_enc), use_container_width=True, hide_index=True)
+            if lista_enc: 
+                st.dataframe(pd.DataFrame(lista_enc), use_container_width=True, hide_index=True)
             else: st.info("Ninguno")
 
     t.sleep(30)
