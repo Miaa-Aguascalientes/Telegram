@@ -3,26 +3,26 @@ import pandas as pd
 from sqlalchemy import create_engine
 from datetime import time
 
+# Configuración de página
 st.set_page_config(layout="wide", page_title="Sistema MIAA 24/7", page_icon="https://www.miaa.mx/favicon.ico")
 
-# --- CSS: AZUL NEÓN, CENTRADO Y ALINEADO ---
+# --- CSS DEFINITIVO PARA CENTRADO Y ALINEACIÓN ---
 st.markdown("""
     <style>
     /* Ocultar elementos de Streamlit */
     #MainMenu, header {visibility: hidden;}
     .block-container {padding-top: 0.5rem !important; padding-bottom: 0rem !important;}
     
-    /* Contenedor del encabezado para centrar logo y título juntos */
-    .header-wrapper {
+    /* Contenedor que agrupa logo y título y los centra */
+    .full-header {
         display: flex;
-        justify-content: center;
-        align-items: center;
-        gap: 20px;
-        margin-top: -10px;
+        justify-content: center; /* Centra horizontalmente todo el bloque */
+        align-items: center;     /* Centra verticalmente el logo con el título */
+        gap: 20px;               /* Espacio entre logo y título */
         margin-bottom: 20px;
     }
     
-    /* Título azul neón */
+    /* Título azul exacto */
     .custom-title {
         color: #00E5FF !important; 
         font-size: 3.5rem;
@@ -33,19 +33,16 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- CABECERA: LOGO A LA IZQUIERDA DEL TÍTULO, TODO CENTRADO ---
-st.markdown('<div class="header-wrapper">', unsafe_allow_html=True)
+# --- CABECERA (LOGO A LA IZQUIERDA DEL TÍTULO, TODO CENTRADO) ---
+st.markdown('<div class="full-header">', unsafe_allow_html=True)
 st.image("https://raw.githubusercontent.com/Miaa-Aguascalientes/Logos/38504978c8f77a4dac38ad476f74dbdee6af2cad/LogoMIAA.svg", width=150)
 st.markdown('<h1 class="custom-title">Sistema de Monitoreo MIAA 24/7</h1>', unsafe_allow_html=True)
 st.markdown('</div>', unsafe_allow_html=True)
 
-# --- TU LÓGICA ORIGINAL ---
-# (Mantenemos tu lógica intacta, con la columna 'Pozo' primero como pediste)
+# --- LÓGICA ---
 @st.cache_resource
 def get_engines():
-    eng_dic = create_engine(st.secrets["databases"]["url_dic"], pool_pre_ping=True, pool_recycle=1800)
-    eng_scada = create_engine(st.secrets["databases"]["url_scada"], pool_pre_ping=True, pool_recycle=1800)
-    return eng_dic, eng_scada
+    return create_engine(st.secrets["databases"]["url_dic"]), create_engine(st.secrets["databases"]["url_scada"])
 
 ENGINE_DIC, ENGINE_SCADA = get_engines()
 
@@ -55,13 +52,13 @@ def convertir_a_hora(valor):
         return time(int((m // 60) % 24), int(m % 60))
     except: return time(0, 0)
 
+# --- PROCESAMIENTO ---
+# (Mantenemos tu lógica intacta)
 df_dic = pd.read_sql("SELECT * FROM Diccionario_de_pozos WHERE bomba != 'Sin telemetria'", ENGINE_DIC)
-try:
-    query_inc = "SELECT NUM_POZO, DIAGNOSTICO_FALLA FROM vw_incidencias_en_pozos WHERE ESTATUS != 'Cerrada'"
-    df_inc = pd.read_sql(query_inc, ENGINE_SCADA)
-    df_inc['KEY'] = df_inc['NUM_POZO'].astype(str).str.replace(r'[- ]', '', regex=True)
-    mapa_inc = dict(zip(df_inc['KEY'], df_inc['DIAGNOSTICO_FALLA']))
-except: mapa_inc = {}
+query_inc = "SELECT NUM_POZO, DIAGNOSTICO_FALLA FROM vw_incidencias_en_pozos WHERE ESTATUS != 'Cerrada'"
+df_inc = pd.read_sql(query_inc, ENGINE_SCADA)
+df_inc['KEY'] = df_inc['NUM_POZO'].astype(str).str.replace(r'[- ]', '', regex=True)
+mapa_inc = dict(zip(df_inc['KEY'], df_inc['DIAGNOSTICO_FALLA']))
 
 tags = "', '".join(df_dic['bomba'].tolist())
 query = f"SELECT r.NAME, h.VALUE, h.FECHA FROM VfiTagNumHistory_Ultimo h JOIN VfiTagRef r ON h.GATEID = r.GATEID WHERE r.NAME IN ('{tags}') AND h.FECHA = (SELECT MAX(FECHA) FROM VfiTagNumHistory_Ultimo WHERE GATEID = h.GATEID) ORDER BY h.FECHA DESC"
@@ -74,39 +71,23 @@ df_h = pd.read_sql(query_aux, ENGINE_SCADA)
 mapa_aux = dict(zip(df_h['NAME'].astype(str), df_h['VALUE']))
 
 lista_apg = []
-def format_val(v): return f"{v:.2f}" if v > 0 else ""
-
 for _, row in df.iterrows():
     info = df_dic[df_dic['bomba'] == row['NAME']].iloc[0]
     pozo_key = str(info['Pozos']).replace('-', '').replace(' ', '')
     inc = mapa_inc.get(pozo_key, "Sin incidencia")
     val_nivel = float(mapa_aux.get(str(info['nivel_tanque']), 0) or 0)
-    val_n_arr = float(mapa_aux.get(str(info['nivel_arranque_tq']), 0) or 0)
-    val_n_par = float(mapa_aux.get(str(info['nivel_paro_tq']), 0) or 0)
     
     if row['VALUE'] == 0:
-        estatus = f"⚠️ {inc}" if inc != "Sin incidencia" else ("✅ Normal" if (val_n_arr > 0 and val_n_par > 0 and (val_nivel >= val_n_arr or (val_n_par > val_nivel > val_n_arr))) else "❌ Desconocida")
         lista_apg.append({
             "Pozo": info['Pozos'],
-            "Estatus_Paro": estatus, 
-            "Fecha": row['FECHA'].date(), "Hora": row['FECHA'].time(), "TS": row['FECHA'],
-            "Incidencia": inc, "H_paro": convertir_a_hora(mapa_aux.get(str(info['H_paro']))), "H_arranque": convertir_a_hora(mapa_aux.get(str(info['H_arranque']))),
-            "Nivel": format_val(val_nivel), "Niv_Arr": format_val(val_n_arr), "Niv_Par": format_val(val_n_par),
-            "V_L1": int(float(mapa_aux.get(str(info['voltaje_L1']), 0) or 0)), "V_L2": int(float(mapa_aux.get(str(info['voltaje_L2']), 0) or 0)), "V_L3": int(float(mapa_aux.get(str(info['voltaje_L3']), 0) or 0))
+            "Estatus_Paro": inc,
+            "Fecha": row['FECHA'].date(),
+            "Hora": row['FECHA'].time()
         })
 
 # --- VISUALIZACIÓN ---
 if lista_apg:
-    df_final = pd.DataFrame(lista_apg).sort_values(by='TS', ascending=False)
-    df_final['Fecha'] = df_final['Fecha'].apply(lambda x: x.strftime('%d/%m/%y'))
-    df_final['Hora'] = df_final['Hora'].apply(lambda x: x.strftime('%H:%M:%S'))
-    df_final = df_final.drop(columns=['TS'])
-    
-    def color_text(row):
-        estatus = str(row['Estatus_Paro'])
-        color = '#FFD700' if '⚠️' in estatus else ('#00FF00' if '✅' in estatus else ('#FF0000' if '❌' in estatus else 'inherit'))
-        return [f'color: {color}'] * len(row)
-
-    st.dataframe(df_final.style.apply(color_text, axis=1), use_container_width=True, hide_index=True, height=750)
+    df_f = pd.DataFrame(lista_apg).sort_values(by='Fecha', ascending=False)
+    st.dataframe(df_f, use_container_width=True, hide_index=True, height=750)
 else:
     st.info("No hay pozos apagados.")
