@@ -54,7 +54,6 @@ placeholder = st.empty()
 
 while True:
     with placeholder.container():
-        # --- LÓGICA DE DATOS ---
         df_dic = pd.read_sql("SELECT * FROM Diccionario_de_pozos WHERE bomba != 'Sin telemetria'", ENGINE_DIC)
         try:
             query_inc = "SELECT NUM_POZO, DIAGNOSTICO_FALLA FROM vw_incidencias_en_pozos WHERE ESTATUS != 'Cerrada'"
@@ -80,21 +79,22 @@ while True:
             info = df_dic[df_dic['bomba'] == row['NAME']].iloc[0]
             pozo_key = str(info['Pozos']).replace('-', '').replace(' ', '')
             inc = mapa_inc.get(pozo_key, "Sin incidencia")
+            val_nivel = float(mapa_aux.get(str(info['nivel_tanque']), 0) or 0)
+            val_n_arr = float(mapa_aux.get(str(info['nivel_arranque_tq']), 0) or 0)
+            val_n_par = float(mapa_aux.get(str(info['nivel_paro_tq']), 0) or 0)
             
             data_row = {
                 "Pozo": info['Pozos'], "Fecha": row['FECHA'].date(), "Hora": row['FECHA'].time(),
                 "Incidencia": inc, "H_paro": convertir_a_hora(mapa_aux.get(str(info['H_paro']))),
                 "H_arranque": convertir_a_hora(mapa_aux.get(str(info['H_arranque']))),
-                "Nivel": format_val(float(mapa_aux.get(str(info['nivel_tanque']), 0) or 0)),
-                "Niv_Arr": format_val(float(mapa_aux.get(str(info['nivel_arranque_tq']), 0) or 0)),
-                "Niv_Par": format_val(float(mapa_aux.get(str(info['nivel_paro_tq']), 0) or 0)),
-                "V_L1": int(float(mapa_aux.get(str(info['voltaje_L1']), 0) or 0)),
-                "V_L2": int(float(mapa_aux.get(str(info['voltaje_L2']), 0) or 0)),
+                "Nivel": format_val(val_nivel), "Niv_Arr": format_val(val_n_arr), "Niv_Par": format_val(val_n_par),
+                "V_L1": int(float(mapa_aux.get(str(info['voltaje_L1']), 0) or 0)), 
+                "V_L2": int(float(mapa_aux.get(str(info['voltaje_L2']), 0) or 0)), 
                 "V_L3": int(float(mapa_aux.get(str(info['voltaje_L3']), 0) or 0))
             }
-
+            
             if row['VALUE'] == 0:
-                estatus = f"⚠️ {inc}" if inc != "Sin incidencia" else ("✅ Normal" if (float(mapa_aux.get(str(info['nivel_arranque_tq']), 0) or 0) > 0) else "❌ Desconocida")
+                estatus = f"⚠️ {inc}" if inc != "Sin incidencia" else ("✅ Normal" if (val_n_arr > 0 and val_n_par > 0 and (val_nivel >= val_n_arr or (val_n_par > val_nivel > val_n_arr))) else "❌ Desconocida")
                 data_row["Estatus_Paro"] = estatus
                 data_row["TS"] = row['FECHA']
                 lista_apg.append(data_row)
@@ -102,11 +102,11 @@ while True:
                 lista_enc.append(data_row)
 
         # --- VISUALIZACIÓN ---
-        if lista_apg or lista_enc:
-            df_final = pd.DataFrame(lista_apg).sort_values(by='TS', ascending=False) if lista_apg else pd.DataFrame()
-            total, normal = len(df_final), len(df_final[df_final['Estatus_Paro'].str.contains('✅')]) if not df_final.empty else 0
-            incidencia = len(df_final[df_final['Estatus_Paro'].str.contains('⚠️')]) if not df_final.empty else 0
-            desconocida = len(df_final[df_final['Estatus_Paro'].str.contains('❌')]) if not df_final.empty else 0
+        if lista_apg:
+            df_final = pd.DataFrame(lista_apg).sort_values(by='TS', ascending=False)
+            total, normal = len(df_final), len(df_final[df_final['Estatus_Paro'].str.contains('✅')])
+            incidencia = len(df_final[df_final['Estatus_Paro'].str.contains('⚠️')])
+            desconocida = len(df_final[df_final['Estatus_Paro'].str.contains('❌')])
 
             c1, c2, c3, c4 = st.columns(4)
             with c1: render_card("Total Apagados", total, "#FFFFFF", "🔴")
@@ -120,22 +120,25 @@ while True:
             
             with col_izq:
                 st.subheader("🔴 Pozos Apagados")
-                if not df_final.empty:
-                    cols_orden = ["Pozo", "Estatus_Paro" "Fecha", "Hora", "Incidencia", "H_paro", "H_arranque", "Nivel", "Niv_Arr", "Niv_Par", "V_L1", "V_L2", "V_L3"]
-                    df_mostrar = df_final[cols_orden]
-                    def color_text(row):
-                        e = str(row['Estatus_Paro'])
-                        c = '#FFD700' if '⚠️' in e else ('#00FF00' if '✅' in e else ('#FF0000' if '❌' in e else 'inherit'))
-                        return [f'color: {c}'] * len(row)
-                    st.dataframe(df_mostrar.style.apply(color_text, axis=1), use_container_width=True, hide_index=True)
-                else: st.info("No hay pozos apagados.")
+                # ORDEN ORIGINAL DE TUS COLUMNAS
+                cols_orden = ["Pozo", "Fecha", "Hora", "Incidencia", "H_paro", "H_arranque", "Nivel", "Niv_Arr", "Niv_Par", "V_L1", "V_L2", "V_L3", "Estatus_Paro"]
+                df_mostrar = df_final[cols_orden].copy()
+                df_mostrar['Fecha'] = df_mostrar['Fecha'].apply(lambda x: x.strftime('%d/%m/%y'))
+                df_mostrar['Hora'] = df_mostrar['Hora'].apply(lambda x: x.strftime('%H:%M:%S'))
+                
+                def color_text(row):
+                    e = str(row['Estatus_Paro'])
+                    c = '#FFD700' if '⚠️' in e else ('#00FF00' if '✅' in e else ('#FF0000' if '❌' in e else 'inherit'))
+                    return [f'color: {c}'] * len(row)
 
+                st.dataframe(df_mostrar.style.apply(color_text, axis=1), use_container_width=True, hide_index=True, height=750)
+            
             with col_der:
                 st.subheader("🟢 Pozos Encendidos")
                 if lista_enc:
-                    st.dataframe(pd.DataFrame(lista_enc), use_container_width=True, hide_index=True)
-                else: st.info("No hay pozos encendidos.")
+                    st.dataframe(pd.DataFrame(lista_enc), use_container_width=True, hide_index=True, height=750)
+                else: st.info("No hay pozos operando.")
         else:
-            st.info("No hay actividad de pozos.")
+            st.info("No hay pozos apagados.")
 
     t.sleep(30)
