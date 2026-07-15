@@ -81,25 +81,29 @@ while True:
         mapa_aux = dict(zip(df_h['NAME'].astype(str), df_h['VALUE']))
 
         lista_apg, lista_enc = [], []
-        def format_val(v): return f"{v:.2f}" if v > 0 else ""
+        def format_val(v):
+            # Si el valor es None, 0 o vacío, devuelve "Directo a red"
+            if v is None or float(v) == 0:
+                return "Directo a red"
+            return f"{v:.2f}"
 
         for _, row in df.iterrows():
-            info = df_dic[df_dic['bomba'] == row['NAME']].iloc[0]
-            pozo_key = str(info['Pozos']).replace('-', '').replace(' ', '')
-            inc = mapa_inc.get(pozo_key, "Sin incidencia")
-            
-            # Aseguramos que el registro tenga el timestamp para ordenar
+            # ... (resto de tu código)
             data_row = {
-                "Pozo": info['Pozos'], "Fecha": row['FECHA'].date(), "Hora": row['FECHA'].time(),
-                "Incidencia": inc, "H_paro": convertir_a_hora(mapa_aux.get(str(info['H_paro']))), 
+                "Pozo": info['Pozos'], 
+                "Fecha": row['FECHA'].date(), 
+                "Hora": row['FECHA'].time(),
+                "Incidencia": inc, 
+                "H_paro": convertir_a_hora(mapa_aux.get(str(info['H_paro']))), 
                 "H_arranque": convertir_a_hora(mapa_aux.get(str(info['H_arranque']))),
-                "Nivel": format_val(float(mapa_aux.get(str(info['nivel_tanque']), 0) or 0)),
-                "Niv_Arr": format_val(float(mapa_aux.get(str(info['nivel_arranque_tq']), 0) or 0)),
-                "Niv_Par": format_val(float(mapa_aux.get(str(info['nivel_paro_tq']), 0) or 0)),
+                # Ahora se usará la nueva lógica de formato aquí:
+                "Nivel": format_val(mapa_aux.get(str(info['nivel_tanque']))),
+                "Niv_Arr": format_val(mapa_aux.get(str(info['nivel_arranque_tq']))),
+                "Niv_Par": format_val(mapa_aux.get(str(info['nivel_paro_tq']))),
                 "V_L1": int(float(mapa_aux.get(str(info['voltaje_L1']), 0) or 0)), 
                 "V_L2": int(float(mapa_aux.get(str(info['voltaje_L2']), 0) or 0)), 
                 "V_L3": int(float(mapa_aux.get(str(info['voltaje_L3']), 0) or 0)),
-                "TS": row['FECHA'] # Mantenemos el timestamp real
+                "TS": row['FECHA']
             }
 
             if row['VALUE'] == 0:
