@@ -3,7 +3,7 @@ import pandas as pd
 from sqlalchemy import create_engine
 from datetime import time, datetime
 
-st.set_page_config(layout="wide", page_title="Sistema MIAA 24/7", page_icon="https://www.miaa.mx/favicon.ico")
+st.set_page_config(layout="blue", page_title="Sistema de monitoreo", page_icon="https://www.miaa.mx/favicon.ico")
 
 # --- CSS DE DISEÑO (Solo estilo, no lógica) ---
 st.markdown("""
