@@ -10,13 +10,23 @@ st.set_page_config(layout="wide", page_title="Sistema de monitoreo", page_icon="
 st.write("""
 <style>
     #MainMenu, header {visibility: hidden;}
-    .block-container {padding-top: 0.5rem !important; padding-bottom: 0rem !important;}
-    .custom-title {color: #00E5FF !important; font-size: 2.5rem; font-weight: bold; margin-bottom: 10px; text-align: center;}
+    .block-container {padding-top: 0.2rem !important; padding-bottom: 0rem !important;}
+    .custom-title {color: #00E5FF !important; font-size: 2rem; font-weight: bold; margin-bottom: 5px; text-align: center;}
     .logo-container {display: flex; justify-content: center;}
-    /* Tarjetas más compactas */
-    .dashboard-card {background-color: #0e1117; border: 1px solid #262730; border-radius: 8px; padding: 8px 10px; text-align: center; margin: 2px;}
-    .card-label {color: #ffffff; font-size: 0.75rem; margin-bottom: 4px;}
-    .card-value {font-size: 1.3rem; font-weight: bold;}
+    /* Tarjetas ultra delgadas */
+    .dashboard-card {
+        background-color: #0e1117; 
+        border: 1px solid #262730; 
+        border-radius: 5px; 
+        padding: 2px 5px !important; 
+        text-align: center; 
+        margin: 1px !important;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    .card-label {color: #ffffff; font-size: 0.65rem !important; margin: 0 !important;}
+    .card-value {font-size: 1rem !important; font-weight: bold; margin-left: 10px;}
 </style>
 """, unsafe_allow_html=True)
 
