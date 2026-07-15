@@ -3,38 +3,24 @@ import pandas as pd
 from sqlalchemy import create_engine
 from datetime import time
 
-st.set_page_config(layout="wide", page_title="Sistema de monitoreo", page_icon="https://www.miaa.mx/favicon.ico")
+# Configuración inicial
+st.set_page_config(layout="wide", page_title="Sistema de monitoreo")
 
-# --- CSS DE ESTILO ---
-# Asegúrate de que las triples comillas estén bien cerradas y no haya espacios extra
-st.markdown("""
-    <style>
+# Inyección de estilos minimizada para evitar errores de despliegue
+st.write("""
+<style>
     #MainMenu, header {visibility: hidden;}
-    .block-container {padding-top: 1rem !important;}
-    .dashboard-card {
-        background-color: #0e1117;
-        border: 1px solid #262730;
-        border-radius: 10px;
-        padding: 15px;
-        text-align: center;
-        margin: 5px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.3);
-    }
+    .dashboard-card {background-color: #0e1117; border: 1px solid #262730; border-radius: 10px; padding: 15px; text-align: center; margin: 5px; box-shadow: 0 4px 6px rgba(0,0,0,0.3);}
     .card-label {color: #ffffff; font-size: 0.9rem; margin-bottom: 10px; font-weight: 500;}
     .card-value {font-size: 1.8rem; font-weight: bold;}
-    .custom-title {color: #00E5FF !important; font-size: 3rem; font-weight: bold; text-align: center; margin-bottom: 20px;}
-    </style>
-""", unsafe_html=True)
+    .custom-title {color: #00E5FF; font-size: 3rem; font-weight: bold; text-align: center; margin-bottom: 20px;}
+</style>
+""", unsafe_allow_html=True)
 
 def render_card(label, value, color_val, icon):
-    st.markdown(f"""
-        <div class="dashboard-card">
-            <div class="card-label">{icon} {label}</div>
-            <div class="card-value" style="color: {color_val}">{value}</div>
-        </div>
-    """, unsafe_html=True)
+    st.write(f'<div class="dashboard-card"><div class="card-label">{icon} {label}</div><div class="card-value" style="color:{color_val}">{value}</div></div>', unsafe_allow_html=True)
 
-# --- CONEXIÓN ---
+# Conexión
 @st.cache_resource
 def get_engines():
     eng_dic = create_engine(st.secrets["databases"]["url_dic"], pool_pre_ping=True, pool_recycle=1800)
@@ -49,8 +35,8 @@ def convertir_a_hora(valor):
         return time(int((m // 60) % 24), int(m % 60))
     except: return time(0, 0)
 
-# --- LÓGICA Y VISUALIZACIÓN ---
-st.markdown('<h1 class="custom-title">Sistema de Monitoreo</h1>', unsafe_html=True)
+# Lógica
+st.write('<h1 class="custom-title">Sistema de Monitoreo</h1>', unsafe_allow_html=True)
 
 df_dic = pd.read_sql("SELECT * FROM Diccionario_de_pozos WHERE bomba != 'Sin telemetria'", ENGINE_DIC)
 
@@ -91,20 +77,19 @@ for _, row in df.iterrows():
             "V_L1": int(float(mapa_aux.get(str(info['voltaje_L1']), 0) or 0)), "V_L2": int(float(mapa_aux.get(str(info['voltaje_L2']), 0) or 0)), "V_L3": int(float(mapa_aux.get(str(info['voltaje_L3']), 0) or 0))
         })
 
+# Visualización
 if lista_apg:
     df_final = pd.DataFrame(lista_apg).sort_values(by='TS', ascending=False)
     total, normal = len(df_final), len(df_final[df_final['Estatus_Paro'].str.contains('✅')])
     incidencia = len(df_final[df_final['Estatus_Paro'].str.contains('⚠️')])
     desconocida = len(df_final[df_final['Estatus_Paro'].str.contains('❌')])
 
-    c1, c2, c3, c4 = st.columns(4)
-    with c1: render_card("Total Apagados", total, "#FFFFFF", "🔴")
-    with c2: render_card("Estatus Normal", normal, "#00FF00", "✅")
-    with c3: render_card("Por Incidencia", incidencia, "#FFD700", "⚠️")
-    with c4: render_card("Desconocida", desconocida, "#FF0000", "❌")
+    cols = st.columns(4)
+    with cols[0]: render_card("Total Apagados", total, "#FFFFFF", "🔴")
+    with cols[1]: render_card("Estatus Normal", normal, "#00FF00", "✅")
+    with cols[2]: render_card("Por Incidencia", incidencia, "#FFD700", "⚠️")
+    with cols[3]: render_card("Desconocida", desconocida, "#FF0000", "❌")
     
-    st.markdown("<br>", unsafe_allow_html=True)
-
     df_mostrar = df_final.drop(columns=['TS'])
     df_mostrar['Fecha'] = df_mostrar['Fecha'].apply(lambda x: x.strftime('%d/%m/%y'))
     df_mostrar['Hora'] = df_mostrar['Hora'].apply(lambda x: x.strftime('%H:%M:%S'))
