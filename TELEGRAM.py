@@ -5,7 +5,6 @@ from datetime import time, datetime
 
 st.set_page_config(layout="wide", page_title="Sistema MIAA 24/7")
 
-# --- CONEXIÓN ---
 @st.cache_resource
 def get_engines():
     eng_dic = create_engine(st.secrets["databases"]["url_dic"], pool_pre_ping=True, pool_recycle=1800)
@@ -16,27 +15,21 @@ ENGINE_DIC, ENGINE_SCADA = get_engines()
 
 def convertir_a_hora(valor):
     try:
-        m = float(valor)
-        return time(int((m // 60) % 24), int(m % 60))
+        return time(int((float(valor) // 60) % 24), int(float(valor) % 60))
     except: return time(0, 0)
 
-# --- PROCESAMIENTO ---
 st.title("Sistema de Monitoreo MIAA 24/7")
 
-# Consultas
 df_dic = pd.read_sql("SELECT * FROM Diccionario_de_pozos WHERE bomba != 'Sin telemetria'", ENGINE_DIC)
 try:
-    query_inc = "SELECT NUM_POZO, DIAGNOSTICO_FALLA FROM vw_incidencias_en_pozos WHERE ESTATUS != 'Cerrada' ORDER BY FECHA_INICIO DESC"
-    df_inc = pd.read_sql(query_inc, ENGINE_SCADA)
+    df_inc = pd.read_sql("SELECT NUM_POZO, DIAGNOSTICO_FALLA FROM vw_incidencias_en_pozos WHERE ESTATUS != 'Cerrada' ORDER BY FECHA_INICIO DESC", ENGINE_SCADA)
     mapa_inc = dict(zip(df_inc['NUM_POZO'].str.replace('-', ''), df_inc['DIAGNOSTICO_FALLA']))
 except:
     mapa_inc = {}
 
 tags = "', '".join(df_dic['bomba'].tolist())
-query = f"SELECT r.NAME, h.VALUE, h.FECHA FROM VfiTagNumHistory_Ultimo h JOIN VfiTagRef r ON h.GATEID = r.GATEID WHERE r.NAME IN ('{tags}') AND h.FECHA = (SELECT MAX(FECHA) FROM VfiTagNumHistory_Ultimo WHERE GATEID = h.GATEID)"
-df = pd.read_sql(query, ENGINE_SCADA)
+df = pd.read_sql(f"SELECT r.NAME, h.VALUE, h.FECHA FROM VfiTagNumHistory_Ultimo h JOIN VfiTagRef r ON h.GATEID = r.GATEID WHERE r.NAME IN ('{tags}') AND h.FECHA = (SELECT MAX(FECHA) FROM VfiTagNumHistory_Ultimo WHERE GATEID = h.GATEID)", ENGINE_SCADA)
 
-# Auxiliares
 cols_aux = ['H_arranque', 'H_paro', 'nivel_tanque', 'nivel_arranque_tq', 'nivel_paro_tq', 'voltaje_L1', 'voltaje_L2', 'voltaje_L3']
 lista_aux_tags = list(set([t for col in cols_aux for t in df_dic[col].dropna().tolist()]))
 df_h = pd.read_sql(f"SELECT r.NAME, h.VALUE FROM VfiTagNumHistory_Ultimo h JOIN VfiTagRef r ON h.GATEID = r.GATEID WHERE r.NAME IN ('{', '.join([f'\"{t}\"' for t in lista_aux_tags])}') AND h.FECHA = (SELECT MAX(FECHA) FROM VfiTagNumHistory_Ultimo WHERE GATEID = h.GATEID)", ENGINE_SCADA)
@@ -49,51 +42,41 @@ for _, row in df.iterrows():
     pozo = info['Pozos']
     inc = mapa_inc.get(pozo.replace('-', ''), "Sin incidencia")
     
-    # FORMATO APLICADO: Niveles con 2 decimales, Voltajes como enteros (sin decimales)
-    nivel = round(float(mapa_aux.get(info['nivel_tanque'], 0)), 2)
-    niv_arr = round(float(mapa_aux.get(info['nivel_arranque_tq'], 0)), 2)
-    niv_par = round(float(mapa_aux.get(info['nivel_paro_tq'], 0)), 2)
+    # Obtener valores crudos primero
+    val_nivel = mapa_aux.get(info['nivel_tanque'], 0)
+    val_n_arr = mapa_aux.get(info['nivel_arranque_tq'], 0)
+    v1 = mapa_aux.get(info['voltaje_L1'], None)
+    v2 = mapa_aux.get(info['voltaje_L2'], None)
+    v3 = mapa_aux.get(info['voltaje_L3'], None)
     
     fila = {
         "Pozo": pozo, "Fecha": row['FECHA'].strftime('%d/%m/%y'), "Hora": row['FECHA'].strftime('%H:%M:%S'),
         "Incidencia": inc,
         "H_paro": convertir_a_hora(mapa_aux.get(info['H_paro'], 0)),
         "H_arranque": convertir_a_hora(mapa_aux.get(info['H_arranque'], 0)),
-        "Nivel": f"{nivel:.2f}",
-        "Niv_Arr": f"{niv_arr:.2f}",
-        "Niv_Par": f"{niv_par:.2f}",
-        "V_L1": int(float(mapa_aux.get(info['voltaje_L1'], 0))),
-        "V_L2": int(float(mapa_aux.get(info['voltaje_L2'], 0))),
-        "V_L3": int(float(mapa_aux.get(info['voltaje_L3'], 0)))
+        "Nivel": f"{float(val_nivel):.2f}",
+        "Niv_Arr": f"{float(val_n_arr):.2f}",
+        "Niv_Par": f"{float(mapa_aux.get(info['nivel_paro_tq'], 0)):.2f}",
+        "V_L1": int(float(v1)) if v1 is not None else 0,
+        "V_L2": int(float(v2)) if v2 is not None else 0,
+        "V_L3": int(float(v3)) if v3 is not None else 0
     }
 
     if row['VALUE'] == 0:
         estatus = "❌ Desconocida"
         if inc != "Sin incidencia": estatus = "⚠️ Parado por incidencia"
-        elif nivel < (niv_arr * 0.3): estatus = "No arranca con su condición de tanque"
-        
+        elif float(val_nivel) < (float(val_n_arr) * 0.3): estatus = "No arranca con su condición de tanque"
         fila["Estatus_Paro"] = estatus
         lista_apg.append(fila)
     else:
         lista_enc.append(fila)
 
-# --- VISUALIZACIÓN ---
-tab1, tab2 = st.tabs(["APAGADOS (Atención)", "ENCENDIDOS"])
-
-with tab1:
+with st.tabs(["APAGADOS (Atención)", "ENCENDIDOS"])[0]:
     if lista_apg:
-        df_apg = pd.DataFrame(lista_apg)[["Pozo", "Fecha", "Hora", "Incidencia", "H_paro", "H_arranque", "Nivel", "Niv_Arr", "Niv_Par", "Estatus_Paro", "V_L1", "V_L2", "V_L3"]]
-        
+        df_apg = pd.DataFrame(lista_apg)
         def color_row(val):
             color = '#FFD700' if 'incidencia' in str(val).lower() else '#FF4500'
             return f'background-color: {color}; color: black'
-
         st.dataframe(df_apg.style.map(color_row, subset=['Estatus_Paro']), use_container_width=True)
     else:
-        st.info("No hay pozos apagados actualmente.")
-
-with tab2:
-    if lista_enc:
-        st.dataframe(pd.DataFrame(lista_enc), use_container_width=True)
-    else:
-        st.info("No hay pozos encendidos.")
+        st.info("No hay pozos apagados.")
