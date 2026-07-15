@@ -24,9 +24,14 @@ def convertir_a_hora(valor):
         return time(int((m // 60) % 24), int(m % 60))
     except: return time(0, 0)
 
-# --- PROCESAMIENTO ---
-st.title("Sistema de Monitoreo MIAA 24/7")
+# --- CABECERA Y LOGO ---
+col1, col2 = st.columns([5, 1])
+with col1:
+    st.title("Sistema de Monitoreo MIAA 24/7")
+with col2:
+    st.image("https://raw.githubusercontent.com/Miaa-Aguascalientes/Logos/38504978c8f77a4dac38ad476f74dbdee6af2cad/LogoMIAA.svg", width=150)
 
+# --- PROCESAMIENTO ---
 df_dic = pd.read_sql("SELECT * FROM Diccionario_de_pozos WHERE bomba != 'Sin telemetria'", ENGINE_DIC)
 
 try:
@@ -91,7 +96,6 @@ for _, row in df.iterrows():
 # --- VISUALIZACIÓN ---
 if lista_apg:
     df_final = pd.DataFrame(lista_apg)
-    
     df_final = df_final.sort_values(by='TS', ascending=False)
     df_final['Fecha'] = df_final['Fecha'].apply(lambda x: x.strftime('%d/%m/%y'))
     df_final['Hora'] = df_final['Hora'].apply(lambda x: x.strftime('%H:%M:%S'))
