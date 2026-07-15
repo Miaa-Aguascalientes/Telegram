@@ -97,7 +97,6 @@ for _, row in df.iterrows():
         lista_enc.append(data_pozo)
 
 # --- VISUALIZACIÓN ---
-# Cálculos de indicadores para pozos apagados
 df_final = pd.DataFrame(lista_apg).sort_values(by='TS', ascending=False) if lista_apg else pd.DataFrame()
 total_apg = len(df_final)
 normal_apg = len(df_final[df_final['Estatus_Paro'].str.contains('✅')]) if not df_final.empty else 0
@@ -112,13 +111,11 @@ with c4: render_card("Desconocida", desc_apg, "#FF0000", "❌")
 
 st.markdown("<br>", unsafe_allow_html=True)
 
-# Columnas para las tablas
 col_izq, col_der = st.columns(2)
 
 with col_izq:
     st.subheader("🔴 Pozos Apagados")
     if not df_final.empty:
-        # ORDEN EXACTO SOLICITADO
         columnas_orden = ["Pozo", "Estatus_Paro", "Fecha", "Hora", "Incidencia", "H_paro", "H_arranque", "Nivel", "Niv_Arr", "Niv_Par", "V_L1", "V_L2", "V_L3"]
         df_mostrar = df_final[columnas_orden].copy()
         df_mostrar['Fecha'] = df_mostrar['Fecha'].apply(lambda x: x.strftime('%d/%m/%y'))
@@ -135,7 +132,7 @@ with col_izq:
 with col_der:
     st.subheader("🟢 Pozos Encendidos")
     if lista_enc:
-        df_enc = pd.DataFrame(lista_enc).drop(columns=['TS'])
+        df_enc = pd.DataFrame(lista_enc).drop(columns=['TS', 'Incidencia']) # Quitamos Incidencia
         df_enc['Fecha'] = df_enc['Fecha'].apply(lambda x: x.strftime('%d/%m/%y'))
         df_enc['Hora'] = df_enc['Hora'].apply(lambda x: x.strftime('%H:%M:%S'))
         st.dataframe(df_enc, use_container_width=True, hide_index=True)
