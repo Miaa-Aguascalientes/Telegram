@@ -121,7 +121,7 @@ while True:
         with cols_ind[2]: render_card("Por Incidencia", len(df_final[df_final['Estatus_Paro'].str.contains('⚠️', na=False)]), "#FFD700", "⚠️")
         with cols_ind[3]: render_card("Desconocida", len(df_final[df_final['Estatus_Paro'].str.contains('❌', na=False)]), "#FF0000", "❌")
         
-        st.markdown("<hr style='margin: 10px 0;'>", unsafe_allow_html=True)
+        st.markdown("<hr style='margin: 10px 0; border: 1px solid #00E5FF;'>", unsafe_allow_html=True)
         
         col_izq, col_der = st.columns([0.65, 0.35])
         
