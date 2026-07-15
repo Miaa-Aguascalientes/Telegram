@@ -12,13 +12,17 @@ st.markdown("""
     .block-container {padding-top: 0.5rem !important; padding-bottom: 0rem !important;}
     
     .custom-title {
-        color: #00E5FF !important; /* Azul exacto y definido */
+        color: #00E5FF !important; 
         font-size: 3.5rem;
         font-weight: bold;
-        text-shadow: none !important; /* Eliminamos el brillo blanco */
-        margin-top: -10px;
+        text-shadow: none !important;
+        margin: 0;
+        text-align: center; /* Centrado del texto */
     }
-    .logo-container {margin-top: -10px;}
+    .logo-container {
+        display: flex;
+        justify-content: center; /* Centrado del logo */
+    }
     </style>
 """, unsafe_allow_html=True)
 
