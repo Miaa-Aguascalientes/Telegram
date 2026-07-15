@@ -97,9 +97,10 @@ if lista_apg:
     
     def color_text(row):
         estatus = str(row['Estatus_Paro'])
-        if '⚠️' in estatus: color = '#FFD700'
-        elif '✅' in estatus: color = '#2E7D32'
-        elif '❌' in estatus: color = '#D32F2F'
+        # Colores intensos: Amarillo brillante, Verde neón, Rojo intenso
+        if '⚠️' in estatus: color = '#FFD700' 
+        elif '✅' in estatus: color = '#00FF00' 
+        elif '❌' in estatus: color = '#FF0000' 
         else: color = 'inherit'
         return [f'color: {color}'] * len(row)
 
