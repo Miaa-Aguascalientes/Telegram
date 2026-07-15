@@ -1,11 +1,5 @@
 streamlit
 pandas
 sqlalchemy
-mysql-connector-python
-psycopg2-binary
-streamlit-folium
-folium
-plotly
-streamlit-autorefresh
-bcrypt
-shapely
+pymysql
+requests
