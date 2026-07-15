@@ -41,6 +41,7 @@ def convertir_a_hora(valor):
         return time(int((m // 60) % 24), int(m % 60))
     except: return time(0, 0)
 
+# Cabecera
 col1, col2 = st.columns([1, 10])
 with col1:
     st.markdown('<div class="logo-container">', unsafe_allow_html=True)
@@ -53,6 +54,7 @@ placeholder = st.empty()
 
 while True:
     with placeholder.container():
+        # --- LÓGICA DE DATOS ---
         df_dic = pd.read_sql("SELECT * FROM Diccionario_de_pozos WHERE bomba != 'Sin telemetria'", ENGINE_DIC)
         try:
             query_inc = "SELECT NUM_POZO, DIAGNOSTICO_FALLA FROM vw_incidencias_en_pozos WHERE ESTATUS != 'Cerrada'"
@@ -79,9 +81,9 @@ while True:
             pozo_key = str(info['Pozos']).replace('-', '').replace(' ', '')
             inc = mapa_inc.get(pozo_key, "Sin incidencia")
             
-            data_comun = {
+            data_row = {
                 "Pozo": info['Pozos'], "Fecha": row['FECHA'].date(), "Hora": row['FECHA'].time(),
-                "H_paro": convertir_a_hora(mapa_aux.get(str(info['H_paro']))), 
+                "Incidencia": inc, "H_paro": convertir_a_hora(mapa_aux.get(str(info['H_paro']))),
                 "H_arranque": convertir_a_hora(mapa_aux.get(str(info['H_arranque']))),
                 "Nivel": format_val(float(mapa_aux.get(str(info['nivel_tanque']), 0) or 0)),
                 "Niv_Arr": format_val(float(mapa_aux.get(str(info['nivel_arranque_tq']), 0) or 0)),
@@ -90,45 +92,50 @@ while True:
                 "V_L2": int(float(mapa_aux.get(str(info['voltaje_L2']), 0) or 0)),
                 "V_L3": int(float(mapa_aux.get(str(info['voltaje_L3']), 0) or 0))
             }
-            
+
             if row['VALUE'] == 0:
                 estatus = f"⚠️ {inc}" if inc != "Sin incidencia" else ("✅ Normal" if (float(mapa_aux.get(str(info['nivel_arranque_tq']), 0) or 0) > 0) else "❌ Desconocida")
-                data_comun.update({"Estatus_Paro": estatus, "Incidencia": inc, "TS": row['FECHA']})
-                lista_apg.append(data_comun)
+                data_row["Estatus_Paro"] = estatus
+                data_row["TS"] = row['FECHA']
+                lista_apg.append(data_row)
             else:
-                lista_enc.append(data_comun)
+                lista_enc.append(data_row)
 
         # --- VISUALIZACIÓN ---
-        df_final = pd.DataFrame(lista_apg).sort_values(by='TS', ascending=False) if lista_apg else pd.DataFrame()
-        total, normal = len(df_final), len(df_final[df_final['Estatus_Paro'].str.contains('✅')]) if not df_final.empty else 0
-        incidencia = len(df_final[df_final['Estatus_Paro'].str.contains('⚠️')]) if not df_final.empty else 0
-        desconocida = len(df_final[df_final['Estatus_Paro'].str.contains('❌')]) if not df_final.empty else 0
+        if lista_apg or lista_enc:
+            df_final = pd.DataFrame(lista_apg).sort_values(by='TS', ascending=False) if lista_apg else pd.DataFrame()
+            total, normal = len(df_final), len(df_final[df_final['Estatus_Paro'].str.contains('✅')]) if not df_final.empty else 0
+            incidencia = len(df_final[df_final['Estatus_Paro'].str.contains('⚠️')]) if not df_final.empty else 0
+            desconocida = len(df_final[df_final['Estatus_Paro'].str.contains('❌')]) if not df_final.empty else 0
 
-        c1, c2, c3, c4 = st.columns(4)
-        with c1: render_card("Total Apagados", total, "#FFFFFF", "🔴")
-        with c2: render_card("Estatus Normal", normal, "#00FF00", "✅")
-        with c3: render_card("Por Incidencia", incidencia, "#FFD700", "⚠️")
-        with c4: render_card("Desconocida", desconocida, "#FF0000", "❌")
-        
-        st.markdown("<br>", unsafe_allow_html=True)
+            c1, c2, c3, c4 = st.columns(4)
+            with c1: render_card("Total Apagados", total, "#FFFFFF", "🔴")
+            with c2: render_card("Estatus Normal", normal, "#00FF00", "✅")
+            with c3: render_card("Por Incidencia", incidencia, "#FFD700", "⚠️")
+            with c4: render_card("Desconocida", desconocida, "#FF0000", "❌")
+            
+            st.markdown("<br>", unsafe_allow_html=True)
 
-        col_izq, col_der = st.columns(2)
-        
-        with col_izq:
-            st.subheader("🔴 Pozos Apagados")
-            if not df_final.empty:
-                df_mostrar = df_final.drop(columns=['TS'])
-                def color_text(row):
-                    e = str(row['Estatus_Paro'])
-                    c = '#FFD700' if '⚠️' in e else ('#00FF00' if '✅' in e else ('#FF0000' if '❌' in e else 'inherit'))
-                    return [f'color: {c}'] * len(row)
-                st.dataframe(df_mostrar.style.apply(color_text, axis=1), use_container_width=True, hide_index=True)
-            else: st.info("No hay pozos apagados.")
+            col_izq, col_der = st.columns(2)
+            
+            with col_izq:
+                st.subheader("🔴 Pozos Apagados")
+                if not df_final.empty:
+                    cols_orden = ["Pozo", "Fecha", "Hora", "Incidencia", "H_paro", "H_arranque", "Nivel", "Niv_Arr", "Niv_Par", "V_L1", "V_L2", "V_L3", "Estatus_Paro"]
+                    df_mostrar = df_final[cols_orden]
+                    def color_text(row):
+                        e = str(row['Estatus_Paro'])
+                        c = '#FFD700' if '⚠️' in e else ('#00FF00' if '✅' in e else ('#FF0000' if '❌' in e else 'inherit'))
+                        return [f'color: {c}'] * len(row)
+                    st.dataframe(df_mostrar.style.apply(color_text, axis=1), use_container_width=True, hide_index=True)
+                else: st.info("No hay pozos apagados.")
 
-        with col_der:
-            st.subheader("🟢 Pozos Encendidos")
-            if lista_enc:
-                st.dataframe(pd.DataFrame(lista_enc), use_container_width=True, hide_index=True)
-            else: st.info("No hay pozos encendidos.")
+            with col_der:
+                st.subheader("🟢 Pozos Encendidos")
+                if lista_enc:
+                    st.dataframe(pd.DataFrame(lista_enc), use_container_width=True, hide_index=True)
+                else: st.info("No hay pozos encendidos.")
+        else:
+            st.info("No hay actividad de pozos.")
 
     t.sleep(30)
