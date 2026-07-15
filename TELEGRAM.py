@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from sqlalchemy import create_engine
 from datetime import time
-import time as t # Necesario para el refresco
+import time as t
 
 st.set_page_config(layout="wide", page_title="Sistema de monitoreo", page_icon="https://www.miaa.mx/favicon.ico")
 
@@ -41,7 +41,7 @@ def convertir_a_hora(valor):
         return time(int((m // 60) % 24), int(m % 60))
     except: return time(0, 0)
 
-# Cabecera fuera del bucle para evitar parpadeo
+# Cabecera
 col1, col2 = st.columns([1, 10])
 with col1:
     st.markdown('<div class="logo-container">', unsafe_allow_html=True)
@@ -106,9 +106,9 @@ while True:
         
         c1, c2, c3, c4 = st.columns(4)
         with c1: render_card("Total Apagados", len(df_final), "#FFFFFF", "🔴")
-        with c2: render_card("Estatus Normal", len(df_final[df_final['Estatus_Paro'].str.contains('✅')]), "#00FF00", "✅")
-        with c3: render_card("Por Incidencia", len(df_final[df_final['Estatus_Paro'].str.contains('⚠️')]), "#FFD700", "⚠️")
-        with c4: render_card("Desconocida", len(df_final[df_final['Estatus_Paro'].str.contains('❌')]), "#FF0000", "❌")
+        with c2: render_card("Estatus Normal", len(df_final[df_final['Estatus_Paro'].str.contains('✅', na=False)]), "#00FF00", "✅")
+        with c3: render_card("Por Incidencia", len(df_final[df_final['Estatus_Paro'].str.contains('⚠️', na=False)]), "#FFD700", "⚠️")
+        with c4: render_card("Desconocida", len(df_final[df_final['Estatus_Paro'].str.contains('❌', na=False)]), "#FF0000", "❌")
         
         st.markdown("<br>", unsafe_allow_html=True)
         col_izq, col_der = st.columns(2)
@@ -120,16 +120,16 @@ while True:
                 df_mostrar = df_final[cols_orden].copy()
                 df_mostrar['Fecha'] = df_mostrar['Fecha'].apply(lambda x: x.strftime('%d/%m/%y'))
                 df_mostrar['Hora'] = df_mostrar['Hora'].apply(lambda x: x.strftime('%H:%M:%S'))
-                st.dataframe(df_mostrar.style.apply(lambda row: [f'color: #FFD700' if '⚠️' in str(row['Estatus_Paro']) else ('#00FF00' if '✅' in str(row['Estatus_Paro']) else ('#FF0000' if '❌' in str(row['Estatus_Paro']) else 'inherit'))]*len(row), axis=1), use_container_width=True, hide_index=True)
+                st.dataframe(df_mostrar, use_container_width=True, hide_index=True)
             else: st.info("No hay pozos apagados.")
 
         with col_der:
             st.subheader("🟢 Pozos Encendidos")
             if lista_enc:
-                df_enc = pd.DataFrame(lista_enc).drop(columns=['TS', 'Incidencia'])
+                df_enc = pd.DataFrame(lista_enc).drop(columns=['TS', 'Incidencia'], errors='ignore')
                 df_enc['Fecha'] = df_enc['Fecha'].apply(lambda x: x.strftime('%d/%m/%y'))
                 df_enc['Hora'] = df_enc['Hora'].apply(lambda x: x.strftime('%H:%M:%S'))
                 st.dataframe(df_enc, use_container_width=True, hide_index=True)
             else: st.info("No hay pozos operando.")
     
-    t.sleep(30) # Se actualiza cada 30 segundos
+    t.sleep(30)
