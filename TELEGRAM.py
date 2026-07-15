@@ -137,19 +137,19 @@ while True:
         
         st.markdown("<hr style='margin: 10px 0; border: 1px solid #00E5FF;'>", unsafe_allow_html=True)
         
-        col_izq, col_der = st.columns([0.65, 0.35])
-        
-        # Función de estilo que conserva colores y centra solo voltajes
-        def color_fila_y_centrado(row):
-            e = str(row.get('Estatus_Paro', ''))
-            c = '#FFD700' if '⚠️' in e else ('#00FF00' if '✅' in e else ('#FF0000' if '❌' in e else 'inherit'))
-            estilos = [f'color: {c}'] * len(row)
-            
-            # Centrar solo columnas de voltaje
+        # --- FUNCIÓN DE ESTILO REFORZADA ---
+        def estilo_estandar(row):
+            estilos = ['text-align: left;'] * len(row)
             for i, col in enumerate(row.index):
-                if col in ['V_L1', 'V_L2', 'V_L3']:
-                    estilos[i] += '; text-align: center'
+                if col in ['V_L1', 'V_L2', 'V_L3']: 
+                    estilos[i] = 'text-align: center !important;'
+                if col == 'Estatus_Paro':
+                    e = str(row['Estatus_Paro'])
+                    c = '#FFD700' if '⚠️' in e else ('#00FF00' if '✅' in e else ('#FF0000' if '❌' in e else 'inherit'))
+                    estilos[i] = f'text-align: left !important; color: {c} !important;'
             return estilos
+        
+        col_izq, col_der = st.columns([0.65, 0.35])
         
         with col_izq:
             st.subheader("🔴 Pozos Apagados")
@@ -158,7 +158,9 @@ while True:
                 df_mostrar = df_final[cols_orden].copy()
                 df_mostrar['Fecha'] = df_mostrar['Fecha'].apply(lambda x: x.strftime('%d/%m/%y'))
                 df_mostrar['Hora'] = df_mostrar['Hora'].apply(lambda x: x.strftime('%H:%M:%S'))
-                st.dataframe(df_mostrar.style.apply(color_fila_y_centrado, axis=1), use_container_width=True, hide_index=True)
+                # Convertimos voltajes a string para forzar centrado en el navegador
+                df_mostrar[['V_L1', 'V_L2', 'V_L3']] = df_mostrar[['V_L1', 'V_L2', 'V_L3']].astype(str)
+                st.dataframe(df_mostrar.style.apply(estilo_estandar, axis=1), use_container_width=True, hide_index=True)
             else: st.info("No hay pozos apagados.")
 
         with col_der:
@@ -167,8 +169,9 @@ while True:
                 df_enc = df_enc_full.drop(columns=['TS', 'Incidencia'], errors='ignore')
                 df_enc['Fecha'] = df_enc['Fecha'].apply(lambda x: x.strftime('%d/%m/%y'))
                 df_enc['Hora'] = df_enc['Hora'].apply(lambda x: x.strftime('%H:%M:%S'))
-                # Aplicamos centrado solo a los voltajes en esta tabla también
-                st.dataframe(df_enc.style.set_properties(subset=['V_L1', 'V_L2', 'V_L3'], **{'text-align': 'center'}), use_container_width=True, hide_index=True)
+                # Convertimos voltajes a string para forzar centrado
+                df_enc[['V_L1', 'V_L2', 'V_L3']] = df_enc[['V_L1', 'V_L2', 'V_L3']].astype(str)
+                st.dataframe(df_enc.style.apply(estilo_estandar, axis=1), use_container_width=True, hide_index=True)
             else: st.info("No hay pozos operando.")
     
     t.sleep(30)
