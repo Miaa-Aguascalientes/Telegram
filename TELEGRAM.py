@@ -64,13 +64,16 @@ for _, row in df.iterrows():
     val_n_arr = float(mapa_aux.get(info['nivel_arranque_tq'], 0) or 0)
     val_n_par = float(mapa_aux.get(info['nivel_paro_tq'], 0) or 0)
     
-    # FILTRO SOLICITADO: Si ambos son 0, ignoramos el pozo
-    if val_n_arr == 0 and val_n_par == 0:
+    # NUEVA LÓGICA: 
+    # Si no hay incidencia Y los niveles son 0, omitimos el pozo.
+    if inc == "Sin incidencia" and val_n_arr == 0 and val_n_par == 0:
         continue
     
     if row['VALUE'] == 0:
         if inc != "Sin incidencia":
             estatus = "⚠️ Parado por incidencia"
+        elif val_n_arr == 0 and val_n_par == 0:
+            estatus = "❌ Desconocida"
         elif val_nivel >= val_n_arr or (val_n_par > val_nivel > val_n_arr):
             estatus = "✅ Normal"
         else:
@@ -104,4 +107,4 @@ if lista_apg:
 
     st.dataframe(df_final.style.map(color_row, subset=['Estatus_Paro']), use_container_width=True)
 else:
-    st.info("No hay pozos apagados con configuración válida.")
+    st.info("No hay pozos apagados que mostrar.")
