@@ -1,30 +1,39 @@
 import streamlit as st
 import pandas as pd
 from sqlalchemy import create_engine
-from datetime import time, datetime
+from datetime import time
 
 st.set_page_config(layout="wide", page_title="Sistema de monitoreo", page_icon="https://www.miaa.mx/favicon.ico")
 
-# --- CSS DE DISEÑO ---
+# --- CSS DE ESTILO ---
 st.markdown("""
     <style>
     #MainMenu, header {visibility: hidden;}
-    .block-container {padding-top: 0.5rem !important; padding-bottom: 0rem !important;}
+    .block-container {padding-top: 1rem !important;}
     
-    .custom-title {
-        color: #00E5FF !important; 
-        font-size: 3.5rem;
-        font-weight: bold;
-        text-shadow: none !important;
-        margin: 0;
+    .dashboard-card {
+        background-color: #0e1117;
+        border: 1px solid #262730;
+        border-radius: 10px;
+        padding: 15px;
         text-align: center;
+        margin: 5px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.3);
     }
-    .logo-container {
-        display: flex;
-        justify-content: center;
-    }
+    .card-label {color: #ffffff; font-size: 0.9rem; margin-bottom: 10px; font-weight: 500;}
+    .card-value {font-size: 1.8rem; font-weight: bold;}
+    
+    .custom-title {color: #00E5FF !important; font-size: 3rem; font-weight: bold; text-align: center; margin-bottom: 20px;}
     </style>
-""", unsafe_allow_html=True)
+""", unsafe_html=True)
+
+def render_card(label, value, color_val, icon):
+    st.markdown(f"""
+        <div class="dashboard-card">
+            <div class="card-label">{icon} {label}</div>
+            <div class="card-value" style="color: {color_val}">{value}</div>
+        </div>
+    """, unsafe_html=True)
 
 # --- CONEXIÓN ---
 @st.cache_resource
@@ -42,13 +51,7 @@ def convertir_a_hora(valor):
     except: return time(0, 0)
 
 # --- CABECERA ---
-col1, col2 = st.columns([1, 10])
-with col1:
-    st.markdown('<div class="logo-container">', unsafe_allow_html=True)
-    st.image("https://raw.githubusercontent.com/Miaa-Aguascalientes/Logos/38504978c8f77a4dac38ad476f74dbdee6af2cad/LogoMIAA.svg", width=200)
-    st.markdown('</div>', unsafe_allow_html=True)
-with col2:
-    st.markdown('<h1 class="custom-title">Sistema de Monitoreo</h1>', unsafe_allow_html=True)
+st.markdown('<h1 class="custom-title">Sistema de Monitoreo</h1>', unsafe_html=True)
 
 # --- LÓGICA DE DATOS ---
 df_dic = pd.read_sql("SELECT * FROM Diccionario_de_pozos WHERE bomba != 'Sin telemetria'", ENGINE_DIC)
@@ -94,31 +97,32 @@ for _, row in df.iterrows():
 if lista_apg:
     df_final = pd.DataFrame(lista_apg).sort_values(by='TS', ascending=False)
     
-    # --- CÁLCULO DE INDICADORES ---
-    total_apagados = len(df_final)
-    normal = len(df_final[df_final['Estatus_Paro'].str.contains('✅ Normal')])
+    # Cálculos para indicadores
+    total = len(df_final)
+    normal = len(df_final[df_final['Estatus_Paro'].str.contains('✅')])
     incidencia = len(df_final[df_final['Estatus_Paro'].str.contains('⚠️')])
-    desconocida = len(df_final[df_final['Estatus_Paro'].str.contains('❌ Desconocida')])
+    desconocida = len(df_final[df_final['Estatus_Paro'].str.contains('❌')])
 
-    # --- MOSTRAR INDICADORES ---
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Total Apagados", total_apagados)
-    m2.metric("Estatus Normal", normal)
-    m3.metric("Por Incidencia", incidencia)
-    m4.metric("Desconocida", desconocida)
+    # Renderizado de tarjetas
+    cols = st.columns(4)
+    with cols[0]: render_card("Total Apagados", total, "#FFFFFF", "🔴")
+    with cols[1]: render_card("Estatus Normal", normal, "#00FF00", "✅")
+    with cols[2]: render_card("Por Incidencia", incidencia, "#FFD700", "⚠️")
+    with cols[3]: render_card("Desconocida", desconocida, "#FF0000", "❌")
     
-    st.divider()
+    st.markdown("<br>", unsafe_allow_html=True)
 
     # --- TABLA ---
-    df_final['Fecha'] = df_final['Fecha'].apply(lambda x: x.strftime('%d/%m/%y'))
-    df_final['Hora'] = df_final['Hora'].apply(lambda x: x.strftime('%H:%M:%S'))
-    df_final = df_final.drop(columns=['TS'])
+    df_mostrar = df_final.copy()
+    df_mostrar['Fecha'] = df_mostrar['Fecha'].apply(lambda x: x.strftime('%d/%m/%y'))
+    df_mostrar['Hora'] = df_mostrar['Hora'].apply(lambda x: x.strftime('%H:%M:%S'))
+    df_mostrar = df_mostrar.drop(columns=['TS'])
     
     def color_text(row):
         estatus = str(row['Estatus_Paro'])
         color = '#FFD700' if '⚠️' in estatus else ('#00FF00' if '✅' in estatus else ('#FF0000' if '❌' in estatus else 'inherit'))
         return [f'color: {color}'] * len(row)
 
-    st.dataframe(df_final.style.apply(color_text, axis=1), use_container_width=True, hide_index=True, height=750)
+    st.dataframe(df_mostrar.style.apply(color_text, axis=1), use_container_width=True, hide_index=True, height=750)
 else:
     st.info("No hay pozos apagados.")
