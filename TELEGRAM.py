@@ -11,10 +11,10 @@ st.markdown("""
     #MainMenu, header {visibility: hidden;}
     .block-container {padding-top: 0.5rem !important; padding-bottom: 0rem !important;}
     .custom-title {
-        color: #00E5FF; 
+        color: #007BFF; /* Azul estándar brillante */
         font-size: 3.5rem;
         font-weight: bold;
-        text-shadow: 0px 0px 8px #00E5FF;
+        text-shadow: 0px 0px 8px #007BFF;
         margin-top: -10px;
     }
     .logo-container {margin-top: -10px;}
