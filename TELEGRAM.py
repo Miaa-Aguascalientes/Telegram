@@ -115,7 +115,7 @@ while True:
                 "TS": row['FECHA']
             }
 
-            if row['VALUE'] == 0:
+        if row['VALUE'] == 0:
             # Lógica corregida: si hay incidencia, muestra "Parado por incidencia"
             if inc != "Sin incidencia":
                 estatus = "⚠️ Parado por incidencia"
