@@ -1,18 +1,58 @@
 import streamlit as st
 import pandas as pd
 from sqlalchemy import create_engine
-from datetime import time
+from datetime import time, datetime, timedelta
 import time as t
+import threading
+import requests
 
+# Configuración de página
 st.set_page_config(layout="wide", page_title="Sistema de monitoreo", page_icon="https://www.miaa.mx/favicon.ico")
 
-# --- CSS DE DISEÑO ---
+# --- ESTADO PARA ALERTAS ---
+if 'alertas_enviadas' not in st.session_state:
+    st.session_state.alertas_enviadas = {}
+
+# --- FUNCIONES DE TELEGRAM ---
+def es_periodo_de_paro_programado(t_par, t_arr):
+    if t_par == time(0, 0) and t_arr == time(0, 0): return False
+    ahora = datetime.now().time()
+    if t_par < t_arr:
+        return t_par <= ahora <= t_arr
+    else:
+        return ahora >= t_par or ahora <= t_arr
+
+def enviar_alerta(pozo, nivel, nivel_arr, hora, h_paro, h_arranque, razon):
+    token = st.secrets["telegram"]["token"]
+    mensaje = (
+        f"📢 <b>Reporte Automatico Miaa</b>\n"
+        f"________________________________\n"
+        f"⚠️ <b>Alerta:</b> Bomba Apagada\n"
+        f"📍 <b>Pozo:</b> {pozo}\n"
+        f"⏳ <b>Hora del paro:</b> {hora}\n"
+        f"💧 <b>Nivel Tanque:</b> {nivel} mts.\n"
+        f"↕️ <b>Nivel Arranque con TQ:</b> {nivel_arr} mts.\n"           
+        f"⏲️ <b>Horario de Op:</b> {h_paro} - {h_arranque}\n"
+        f"🔍 <b>Motivo:</b> {razon}"
+    )
+    def send():
+        try:
+            query = "SELECT chart_id FROM Diccionario_telegram WHERE activo = 'Si'"
+            df_ids = pd.read_sql(query, ENGINE_DIC)
+            for chat_id in df_ids['chart_id'].tolist():
+                try:
+                    requests.get(f"https://api.telegram.org/bot{token}/sendMessage", 
+                                 params={'chat_id': chat_id, 'text': mensaje, 'parse_mode': 'HTML'}, timeout=5)
+                except: continue
+        except: pass
+    threading.Thread(target=send, daemon=True).start()
+
+# --- CSS Y MOTORES ---
 st.write("""
 <style>
     #MainMenu, header {visibility: hidden;}
     .block-container {padding-top: 0.2rem !important; padding-bottom: 0rem !important;}
     .custom-title {color: #00E5FF !important; font-size: 2rem; font-weight: bold; margin-bottom: 5px; text-align: center;}
-    
     .dashboard-card {
         background: linear-gradient(135deg, #1e2630 0%, #0e1117 100%);
         border: 2px solid #003366; 
@@ -51,7 +91,6 @@ def convertir_a_hora(valor):
         return time(int((m // 60) % 24), int(m % 60))
     except: return time(0, 0)
 
-# Cabecera
 col_h1, col_h2 = st.columns([1, 10])
 with col_h1:
     st.image("https://raw.githubusercontent.com/Miaa-Aguascalientes/Logos/38504978c8f77a4dac38ad476f74dbdee6af2cad/LogoMIAA.svg", width=150)
@@ -81,20 +120,7 @@ while True:
         mapa_aux = dict(zip(df_h['NAME'].astype(str), df_h['VALUE']))
 
         lista_apg, lista_enc = [], []
-
-        def format_nivel(v):
-            try:
-                valor = float(v)
-                return "Directo a red" if valor <= 0 else f"{valor:.2f}"
-            except (ValueError, TypeError):
-                return "Directo a red"
-
-        def format_param(v):
-            try:
-                valor = float(v)
-                return f"{valor:.2f}" if valor > 0 else ""
-            except (ValueError, TypeError):
-                return ""
+        ahora_dt = datetime.now()
 
         for _, row in df.iterrows():
             df_match = df_dic[df_dic['bomba'] == row['NAME']]
@@ -104,74 +130,61 @@ while True:
             pozo_key = str(info['Pozos']).replace('-', '').replace(' ', '')
             inc = mapa_inc.get(pozo_key, "Sin incidencia")
             
-            data_row = {
-                "Pozo": info['Pozos'], 
-                "Fecha": row['FECHA'].date(), 
-                "Hora": row['FECHA'].time(),
-                "Incidencia": inc, 
-                "H_paro": convertir_a_hora(mapa_aux.get(str(info['H_paro']))), 
-                "H_arranque": convertir_a_hora(mapa_aux.get(str(info['H_arranque']))),
-                # Aplicamos la función correcta a cada columna
-                "Nivel": format_nivel(mapa_aux.get(str(info['nivel_tanque']), 0)),
-                "Niv_Arr": format_param(mapa_aux.get(str(info['nivel_arranque_tq']), 0)),
-                "Niv_Par": format_param(mapa_aux.get(str(info['nivel_paro_tq']), 0)),
-                "V_L1": int(float(mapa_aux.get(str(info['voltaje_L1']), 0) or 0)), 
-                "V_L2": int(float(mapa_aux.get(str(info['voltaje_L2']), 0) or 0)), 
-                "V_L3": int(float(mapa_aux.get(str(info['voltaje_L3']), 0) or 0)),
-                "TS": row['FECHA']
-            }
-
+            # Valores para lógica
+            n_tq = float(mapa_aux.get(str(info['nivel_tanque']), 0) or 0)
+            n_arr = float(mapa_aux.get(str(info['nivel_arranque_tq']), 0) or 0)
+            n_par = float(mapa_aux.get(str(info['nivel_paro_tq']), 0) or 0)
+            h_p = convertir_a_hora(mapa_aux.get(str(info['H_paro'])))
+            h_a = convertir_a_hora(mapa_aux.get(str(info['H_arranque'])))
+            
+            # Lógica de estatus
+            es_programado = es_periodo_de_paro_programado(h_p, h_a)
+            es_bajo = (n_tq < (n_arr * 0.30) and n_arr > 0)
+            
             if row['VALUE'] == 0:
-                estatus = "⚠️ Parado por incidencia" if inc != "Sin incidencia" else ("✅ Normal" if (float(mapa_aux.get(str(info['nivel_arranque_tq']), 0) or 0) > 0) else "❌ Desconocida")
-                data_row["Estatus_Paro"] = estatus
+                if inc != "Sin incidencia":
+                    estatus = "⚠️ Parado por incidencia"
+                    razon = inc
+                elif es_programado or (n_tq >= n_par and n_par > 0) or (n_tq >= (n_arr * 0.30) and n_tq < n_par):
+                    estatus = "✅ Normal"
+                    razon = "Operación normal"
+                elif es_bajo:
+                    estatus = "No arranca con su condición de tanque"
+                    razon = "Nivel bajo"
+                else:
+                    estatus = "❌ Desconocida"
+                    razon = "Estatus desconocido"
+                
+                # Gestión de alertas
+                if inc == "Sin incidencia" and razon != "Operación normal" and (ahora_dt - row['FECHA']) > timedelta(minutes=90):
+                    if info['Pozos'] not in st.session_state.alertas_enviadas:
+                        enviar_alerta(info['Pozos'], f"{n_tq:.2f}", f"{n_arr:.2f}", row['FECHA'].time(), h_p, h_a, razon)
+                        st.session_state.alertas_enviadas[info['Pozos']] = ahora_dt
+                
+                data_row = {"Pozo": info['Pozos'], "Estatus_Paro": estatus, "Fecha": row['FECHA'].date(), "Hora": row['FECHA'].time(), "Incidencia": inc, "H_paro": h_p, "H_arranque": h_a, "Nivel": f"{n_tq:.2f}", "Niv_Arr": f"{n_arr:.2f}", "Niv_Par": f"{n_par:.2f}", "V_L1": int(float(mapa_aux.get(str(info['voltaje_L1']), 0))), "V_L2": int(float(mapa_aux.get(str(info['voltaje_L2']), 0))), "V_L3": int(float(mapa_aux.get(str(info['voltaje_L3']), 0))), "TS": row['FECHA']}
                 lista_apg.append(data_row)
             else:
-                lista_enc.append(data_row)
+                if info['Pozos'] in st.session_state.alertas_enviadas: del st.session_state.alertas_enviadas[info['Pozos']]
+                lista_enc.append({"Pozo": info['Pozos'], "Fecha": row['FECHA'].date(), "Hora": row['FECHA'].time()})
 
-        # ORDENAMIENTO EXPLÍCITO DE AMBAS LISTAS
-        df_final = pd.DataFrame(lista_apg).sort_values(by='TS', ascending=False).reset_index(drop=True) if lista_apg else pd.DataFrame()
-        df_enc_full = pd.DataFrame(lista_enc).sort_values(by='TS', ascending=False).reset_index(drop=True) if lista_enc else pd.DataFrame()
+        # Renderizado
+        df_final = pd.DataFrame(lista_apg).sort_values(by='TS', ascending=False) if lista_apg else pd.DataFrame()
+        df_enc_full = pd.DataFrame(lista_enc).sort_values(by='Fecha', ascending=False) if lista_enc else pd.DataFrame()
         
-        # Validación para evitar KeyError en los indicadores
         cols_ind = st.columns(4)
         with cols_ind[0]: render_card("Total Apagados", len(df_final), "#FFFFFF", "🔴")
-        
-        # Verificamos si existe la columna antes de filtrar
         if not df_final.empty:
-            with cols_ind[1]: render_card("Estatus Normal", len(df_final[df_final['Estatus_Paro'].str.contains('✅', na=False)]), "#00FF00", "✅")
-            with cols_ind[2]: render_card("Por Incidencia", len(df_final[df_final['Estatus_Paro'].str.contains('⚠️', na=False)]), "#FFD700", "⚠️")
-            with cols_ind[3]: render_card("Desconocida", len(df_final[df_final['Estatus_Paro'].str.contains('❌', na=False)]), "#FF0000", "❌")
-        else:
-            for c in cols_ind[1:]:
-                with c: render_card("-", 0, "#888888", "⚪")
+            with cols_ind[1]: render_card("Estatus Normal", len(df_final[df_final['Estatus_Paro'].str.contains('✅')]), "#00FF00", "✅")
+            with cols_ind[2]: render_card("Por Incidencia", len(df_final[df_final['Estatus_Paro'].str.contains('⚠️')]), "#FFD700", "⚠️")
+            with cols_ind[3]: render_card("Desconocida", len(df_final[df_final['Estatus_Paro'].str.contains('❌')]), "#FF0000", "❌")
         
         st.markdown("<hr style='margin: 10px 0; border: 1px solid #00E5FF;'>", unsafe_allow_html=True)
-        
         col_izq, col_der = st.columns([0.65, 0.35])
-        
         with col_izq:
             st.subheader("🔴 Pozos Apagados")
-            if not df_final.empty:
-                cols_orden = ["Pozo", "Estatus_Paro", "Fecha", "Hora", "Incidencia", "H_paro", "H_arranque", "Nivel", "Niv_Arr", "Niv_Par", "V_L1", "V_L2", "V_L3"]
-                df_mostrar = df_final[cols_orden].copy()
-                df_mostrar['Fecha'] = df_mostrar['Fecha'].apply(lambda x: x.strftime('%d/%m/%y'))
-                df_mostrar['Hora'] = df_mostrar['Hora'].apply(lambda x: x.strftime('%H:%M:%S'))
-                
-                def color_fila(row):
-                    e = str(row['Estatus_Paro'])
-                    c = '#FFD700' if '⚠️' in e else ('#00FF00' if '✅' in e else ('#FF0000' if '❌' in e else 'inherit'))
-                    return [f'color: {c}'] * len(row)
-
-                st.dataframe(df_mostrar.style.apply(color_fila, axis=1), use_container_width=True, hide_index=True)
-            else: st.info("No hay pozos apagados.")
-
+            if not df_final.empty: st.dataframe(df_final.drop(columns=['TS']), use_container_width=True, hide_index=True)
         with col_der:
             st.subheader("🟢 Pozos Encendidos")
-            if not df_enc_full.empty:
-                df_enc = df_enc_full.drop(columns=['TS', 'Incidencia'], errors='ignore')
-                df_enc['Fecha'] = df_enc['Fecha'].apply(lambda x: x.strftime('%d/%m/%y'))
-                df_enc['Hora'] = df_enc['Hora'].apply(lambda x: x.strftime('%H:%M:%S'))
-                st.dataframe(df_enc, use_container_width=True, hide_index=True)
-            else: st.info("No hay pozos operando.")
-    
+            if not df_enc_full.empty: st.dataframe(df_enc_full, use_container_width=True, hide_index=True)
+            
     t.sleep(30)
