@@ -121,7 +121,7 @@ while True:
             with col_izq:
                 st.subheader("🔴 Pozos Apagados")
                 if not df_final.empty:
-                    cols_orden = ["Pozo", "Fecha", "Hora", "Incidencia", "H_paro", "H_arranque", "Nivel", "Niv_Arr", "Niv_Par", "V_L1", "V_L2", "V_L3", "Estatus_Paro"]
+                    cols_orden = ["Pozo", "Estatus_Paro" "Fecha", "Hora", "Incidencia", "H_paro", "H_arranque", "Nivel", "Niv_Arr", "Niv_Par", "V_L1", "V_L2", "V_L3"]
                     df_mostrar = df_final[cols_orden]
                     def color_text(row):
                         e = str(row['Estatus_Paro'])
