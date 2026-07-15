@@ -116,11 +116,18 @@ while True:
             }
 
             if row['VALUE'] == 0:
-                estatus = f"⚠️ {inc}" if inc != "Sin incidencia" else ("✅ Normal" if (float(mapa_aux.get(str(info['nivel_arranque_tq']), 0) or 0) > 0) else "❌ Desconocida")
-                data_row["Estatus_Paro"] = estatus
-                lista_apg.append(data_row)
+            # Lógica corregida: si hay incidencia, muestra "Parado por incidencia"
+            if inc != "Sin incidencia":
+                estatus = "⚠️ Parado por incidencia"
             else:
-                lista_enc.append(data_row)
+                # Si no hay incidencia, mantiene la lógica de "Normal" o "Desconocida"
+                estatus = "✅ Normal" if (float(mapa_aux.get(str(info['nivel_arranque_tq']), 0) or 0) > 0) else "❌ Desconocida"
+            
+            data_row["Estatus_Paro"] = estatus
+            data_row["TS"] = row['FECHA']
+            lista_apg.append(data_row)
+        else:
+            lista_enc.append(data_row)
 
         df_final = pd.DataFrame(lista_apg).sort_values(by='TS', ascending=False) if lista_apg else pd.DataFrame()
         df_enc_full = pd.DataFrame(lista_enc).sort_values(by='TS', ascending=False) if lista_enc else pd.DataFrame()
