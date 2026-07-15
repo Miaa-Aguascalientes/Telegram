@@ -48,7 +48,7 @@ def enviar_alerta(pozo, nivel, nivel_arr, hora, h_paro, h_arranque, razon):
     threading.Thread(target=send, daemon=True).start()
     st.session_state.logs.append(f"[{datetime.now().strftime('%H:%M:%S')}] Alerta enviada: {pozo} - {razon}")
 
-# --- CSS DE DISEÑO ---
+# --- CSS ---
 st.write("""
 <style>
     #MainMenu, header {visibility: hidden;}
@@ -85,7 +85,6 @@ def convertir_a_hora(valor):
         return time(int((m // 60) % 24), int(m % 60))
     except: return time(0, 0)
 
-# Cabecera
 col_h1, col_h2 = st.columns([1, 10])
 with col_h1: st.image("https://raw.githubusercontent.com/Miaa-Aguascalientes/Logos/38504978c8f77a4dac38ad476f74dbdee6af2cad/LogoMIAA.svg", width=150)
 with col_h2: st.markdown('<h1 class="custom-title">Sistema de Monitoreo</h1>', unsafe_allow_html=True)
@@ -149,7 +148,7 @@ while True:
         df_final = pd.DataFrame(lista_apg).sort_values(by='TS', ascending=False) if lista_apg else pd.DataFrame()
         df_enc_full = pd.DataFrame(lista_enc).sort_values(by='Fecha', ascending=False) if lista_enc else pd.DataFrame()
         
-        # Render
+        # Render indicadores
         cols_ind = st.columns(4)
         with cols_ind[0]: render_card("Total Apagados", len(df_final), "#FFFFFF", "🔴")
         if not df_final.empty:
@@ -159,10 +158,23 @@ while True:
         
         st.markdown("<hr>", unsafe_allow_html=True)
         col_izq, col_der = st.columns([0.65, 0.35])
+        
         with col_izq:
-            st.subheader("🔴 Pozos Apagados"); st.dataframe(df_final.drop(columns=['TS'], errors='ignore'), use_container_width=True, hide_index=True)
+            st.subheader("🔴 Pozos Apagados")
+            if not df_final.empty:
+                df_mostrar = df_final.drop(columns=['TS']).copy()
+                df_mostrar['Fecha'] = df_mostrar['Fecha'].apply(lambda x: x.strftime('%d/%m/%y'))
+                df_mostrar['Hora'] = df_mostrar['Hora'].apply(lambda x: x.strftime('%H:%M:%S'))
+                
+                def color_fila(row):
+                    e = str(row['Estatus_Paro'])
+                    c = '#FFD700' if '⚠️' in e else ('#00FF00' if '✅' in e else ('#FF0000' if '❌' in e else 'inherit'))
+                    return [f'color: {c}'] * len(row)
+                st.dataframe(df_mostrar.style.apply(color_fila, axis=1), use_container_width=True, hide_index=True)
+        
         with col_der:
-            st.subheader("🟢 Pozos Encendidos"); st.dataframe(df_enc_full, use_container_width=True, hide_index=True)
+            st.subheader("🟢 Pozos Encendidos")
+            if not df_enc_full.empty: st.dataframe(df_enc_full, use_container_width=True, hide_index=True)
             
         st.subheader("📋 Registro de Alertas")
         st.markdown(f'<div class="log-console">{"\n".join(st.session_state.logs[-15:])}</div>', unsafe_allow_html=True)
