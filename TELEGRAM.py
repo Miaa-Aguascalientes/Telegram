@@ -90,18 +90,19 @@ while True:
                 "Niv_Par": format_val(float(mapa_aux.get(str(info['nivel_paro_tq']), 0) or 0)),
                 "V_L1": int(float(mapa_aux.get(str(info['voltaje_L1']), 0) or 0)), 
                 "V_L2": int(float(mapa_aux.get(str(info['voltaje_L2']), 0) or 0)), 
-                "V_L3": int(float(mapa_aux.get(str(info['voltaje_L3']), 0) or 0))
+                "V_L3": int(float(mapa_aux.get(str(info['voltaje_L3']), 0) or 0)),
+                "TS": row['FECHA'] # Mantenemos TS para ordenar
             }
 
             if row['VALUE'] == 0:
                 estatus = f"⚠️ {inc}" if inc != "Sin incidencia" else ("✅ Normal" if (float(mapa_aux.get(str(info['nivel_arranque_tq']), 0) or 0) > 0) else "❌ Desconocida")
                 data_row["Estatus_Paro"] = estatus
-                data_row["TS"] = row['FECHA']
                 lista_apg.append(data_row)
             else:
                 lista_enc.append(data_row)
 
         df_final = pd.DataFrame(lista_apg).sort_values(by='TS', ascending=False) if lista_apg else pd.DataFrame()
+        df_enc_full = pd.DataFrame(lista_enc).sort_values(by='TS', ascending=False) if lista_enc else pd.DataFrame()
         
         c1, c2, c3, c4 = st.columns(4)
         with c1: render_card("Total Apagados", len(df_final), "#FFFFFF", "🔴")
@@ -111,7 +112,6 @@ while True:
         
         st.markdown("<br>", unsafe_allow_html=True)
         
-        # Columnas ajustadas 65% - 35%
         col_izq, col_der = st.columns([0.65, 0.35])
         
         with col_izq:
@@ -132,8 +132,8 @@ while True:
 
         with col_der:
             st.subheader("🟢 Pozos Encendidos")
-            if lista_enc:
-                df_enc = pd.DataFrame(lista_enc).drop(columns=['TS', 'Incidencia'], errors='ignore')
+            if not df_enc_full.empty:
+                df_enc = df_enc_full.drop(columns=['TS', 'Incidencia'], errors='ignore')
                 df_enc['Fecha'] = df_enc['Fecha'].apply(lambda x: x.strftime('%d/%m/%y'))
                 df_enc['Hora'] = df_enc['Hora'].apply(lambda x: x.strftime('%H:%M:%S'))
                 st.dataframe(df_enc, use_container_width=True, hide_index=True)
