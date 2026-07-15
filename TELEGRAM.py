@@ -84,7 +84,7 @@ for _, row in df.iterrows():
     if row['VALUE'] == 0:
         estatus = f"⚠️ {inc}" if inc != "Sin incidencia" else ("✅ Normal" if (val_n_arr > 0 and val_n_par > 0 and (val_nivel >= val_n_arr or (val_n_par > val_nivel > val_n_arr))) else "❌ Desconocida")
         lista_apg.append({
-            "Estatus_Paro": estatus, "Pozo": info['Pozos'], "Fecha": row['FECHA'].date(), "Hora": row['FECHA'].time(), "TS": row['FECHA'],
+            "Pozo": info['Pozos'], "Estatus_Paro": estatus, "Fecha": row['FECHA'].date(), "Hora": row['FECHA'].time(), "TS": row['FECHA'],
             "Incidencia": inc, "H_paro": convertir_a_hora(mapa_aux.get(str(info['H_paro']))), "H_arranque": convertir_a_hora(mapa_aux.get(str(info['H_arranque']))),
             "Nivel": format_val(val_nivel), "Niv_Arr": format_val(val_n_arr), "Niv_Par": format_val(val_n_par),
             "V_L1": int(float(mapa_aux.get(str(info['voltaje_L1']), 0) or 0)), "V_L2": int(float(mapa_aux.get(str(info['voltaje_L2']), 0) or 0)), "V_L3": int(float(mapa_aux.get(str(info['voltaje_L3']), 0) or 0))
