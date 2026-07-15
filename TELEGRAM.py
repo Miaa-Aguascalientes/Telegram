@@ -1,38 +1,42 @@
 import streamlit as st
 import pandas as pd
 from sqlalchemy import create_engine
-from datetime import datetime, time
+from datetime import time, datetime
 
 st.set_page_config(layout="wide", page_title="Sistema MIAA 24/7")
 
-# --- CONEXIÓN SEGURA ---
+# --- CONEXIÓN ---
 @st.cache_resource
 def get_engines():
-    eng_dic = create_engine(st.secrets["databases"]["url_dic"], pool_pre_ping=True)
-    eng_scada = create_engine(st.secrets["databases"]["url_scada"], pool_pre_ping=True)
+    eng_dic = create_engine(st.secrets["databases"]["url_dic"], pool_pre_ping=True, pool_recycle=1800)
+    eng_scada = create_engine(st.secrets["databases"]["url_scada"], pool_pre_ping=True, pool_recycle=1800)
     return eng_dic, eng_scada
 
 ENGINE_DIC, ENGINE_SCADA = get_engines()
 
-# --- LÓGICA DE PROCESAMIENTO ---
+def convertir_a_hora(valor):
+    try:
+        m = float(valor)
+        return time(int((m // 60) % 24), int(m % 60))
+    except: return time(0, 0)
+
+# --- PROCESAMIENTO ---
 st.title("Sistema de Monitoreo MIAA 24/7")
 
-# Consultas para obtener datos
-df_dic = pd.read_sql("SELECT Pozos, bomba, H_arranque, H_paro, nivel_tanque, nivel_arranque_tq, nivel_paro_tq, voltaje_L1, voltaje_L2, voltaje_L3 FROM Diccionario_de_pozos WHERE bomba != 'Sin telemetria'", ENGINE_DIC)
+# Consultas
+df_dic = pd.read_sql("SELECT * FROM Diccionario_de_pozos WHERE bomba != 'Sin telemetria'", ENGINE_DIC)
 df_inc = pd.read_sql("SELECT NUM_POZO, DIAGNOSTICO_FALLA FROM vw_incidencias_en_pozos WHERE ESTATUS != 'Cerrada'", ENGINE_SCADA)
 mapa_inc = dict(zip(df_inc['NUM_POZO'].str.replace('-', ''), df_inc['DIAGNOSTICO_FALLA']))
 
-tags_str = "', '".join(df_dic['bomba'].tolist())
-query = f"SELECT r.NAME, h.VALUE, h.FECHA FROM VfiTagNumHistory_Ultimo h JOIN VfiTagRef r ON h.GATEID = r.GATEID WHERE r.NAME IN ('{tags_str}') AND h.FECHA = (SELECT MAX(FECHA) FROM VfiTagNumHistory_Ultimo WHERE GATEID = h.GATEID)"
+tags = "', '".join(df_dic['bomba'].tolist())
+query = f"SELECT r.NAME, h.VALUE, h.FECHA FROM VfiTagNumHistory_Ultimo h JOIN VfiTagRef r ON h.GATEID = r.GATEID WHERE r.NAME IN ('{tags}') AND h.FECHA = (SELECT MAX(FECHA) FROM VfiTagNumHistory_Ultimo WHERE GATEID = h.GATEID)"
 df = pd.read_sql(query, ENGINE_SCADA)
 
-# Obtener auxiliares (voltajes, niveles)
-lista_aux = list(set(df_dic['H_arranque'].tolist() + df_dic['H_paro'].tolist() + df_dic['nivel_tanque'].dropna().tolist() + df_dic['voltaje_L1'].dropna().tolist()))
-all_aux_tags = "', '".join(lista_aux)
-df_h = pd.read_sql(f"SELECT r.NAME, h.VALUE FROM VfiTagNumHistory_Ultimo h JOIN VfiTagRef r ON h.GATEID = r.GATEID WHERE r.NAME IN ('{all_aux_tags}') AND h.FECHA = (SELECT MAX(FECHA) FROM VfiTagNumHistory_Ultimo WHERE GATEID = h.GATEID)", ENGINE_SCADA)
+# Auxiliares
+lista_aux_tags = "', '".join(list(set(df_dic['H_arranque'].tolist() + df_dic['H_paro'].tolist() + df_dic['nivel_tanque'].dropna().tolist() + df_dic['voltaje_L1'].dropna().tolist())))
+df_h = pd.read_sql(f"SELECT r.NAME, h.VALUE FROM VfiTagNumHistory_Ultimo h JOIN VfiTagRef r ON h.GATEID = r.GATEID WHERE r.NAME IN ('{lista_aux_tags}') AND h.FECHA = (SELECT MAX(FECHA) FROM VfiTagNumHistory_Ultimo WHERE GATEID = h.GATEID)", ENGINE_SCADA)
 mapa_aux = dict(zip(df_h['NAME'], df_h['VALUE']))
 
-# Bucle principal de clasificación
 lista_apg, lista_enc = [], []
 
 for _, row in df.iterrows():
@@ -40,30 +44,45 @@ for _, row in df.iterrows():
     pozo = info['Pozos']
     inc = mapa_inc.get(pozo.replace('-', ''), "Sin incidencia")
     
-    if row['VALUE'] == 0: # APAGADO
-        # Aquí aplicamos tu lógica de umbral del 30%
-        niv_arr = float(mapa_aux.get(info['nivel_arranque_tq'], 0))
-        nivel_val = float(mapa_aux.get(info['nivel_tanque'], 0))
-        
-        # Clasificación de estatus igual a tu código original
+    # Datos comunes
+    fila = {
+        "Pozo": pozo, "Fecha": row['FECHA'].strftime('%d/%m/%y'), "Hora": row['FECHA'].strftime('%H:%M:%S'),
+        "H_paro": convertir_a_hora(mapa_aux.get(info['H_paro'], 0)),
+        "H_arranque": convertir_a_hora(mapa_aux.get(info['H_arranque'], 0)),
+        "Nivel": float(mapa_aux.get(info['nivel_tanque'], 0)),
+        "Niv_Arr": float(mapa_aux.get(info['nivel_arranque_tq'], 0)),
+        "Niv_Par": float(mapa_aux.get(info['nivel_paro_tq'], 0)),
+        "V_L1": float(mapa_aux.get(info['voltaje_L1'], 0)),
+        "V_L2": float(mapa_aux.get(info['voltaje_L2'], 0)),
+        "V_L3": float(mapa_aux.get(info['voltaje_L3'], 0))
+    }
+
+    if row['VALUE'] == 0:
+        # Lógica de Estatus
         estatus = "❌ Desconocida"
-        if inc.lower() != "sin incidencia": estatus = "⚠️ Parado por incidencia"
-        elif nivel_val < (niv_arr * 0.30): estatus = "No arranca por nivel bajo"
+        if inc != "Sin incidencia": estatus = "⚠️ Parado por incidencia"
+        elif fila['Nivel'] < (fila['Niv_Arr'] * 0.3): estatus = "No arranca con su condición de tanque"
         
-        lista_apg.append({
-            "Pozo": pozo, "Fecha": row['FECHA'].date(), "Hora": row['FECHA'].time(),
-            "Incidencia": inc, "Estatus": estatus, "V_L1": mapa_aux.get(info['voltaje_L1'], 0)
-        })
-    else: # ENCENDIDO
-        lista_enc.append({"Pozo": pozo, "Fecha": row['FECHA'].date(), "Hora": row['FECHA'].time()})
+        fila["Incidencia"] = inc
+        fila["Estatus_Paro"] = estatus
+        lista_apg.append(fila)
+    else:
+        lista_enc.append(fila)
 
 # --- VISUALIZACIÓN ---
-tab1, tab2 = st.tabs(["APAGADOS", "ENCENDIDOS"])
+tab1, tab2 = st.tabs(["APAGADOS (Atención)", "ENCENDIDOS"])
 
 with tab1:
-    df_apg = pd.DataFrame(lista_apg)
-    st.dataframe(df_apg, use_container_width=True)
+    df_apg = pd.DataFrame(lista_apg)[["Pozo", "Fecha", "Hora", "Incidencia", "H_paro", "H_arranque", "Nivel", "Niv_Arr", "Niv_Par", "Estatus_Paro", "V_L1", "V_L2", "V_L3"]]
+    
+    def color_row(val):
+        color = ''
+        if 'incidencia' in str(val).lower(): color = '#FFD700'
+        elif 'desconocida' in str(val).lower(): color = '#FF4500'
+        elif 'no arranca' in str(val).lower(): color = '#FF4500'
+        return f'background-color: {color}'
+
+    st.dataframe(df_apg.style.applymap(color_row, subset=['Estatus_Paro']), use_container_width=True)
 
 with tab2:
-    df_enc = pd.DataFrame(lista_enc)
-    st.dataframe(df_enc, use_container_width=True)
+    st.dataframe(pd.DataFrame(lista_enc), use_container_width=True)
