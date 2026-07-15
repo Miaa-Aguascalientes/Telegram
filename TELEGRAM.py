@@ -8,7 +8,6 @@ st.set_page_config(layout="wide", page_title="Sistema MIAA 24/7")
 # --- CONEXIÓN ---
 @st.cache_resource
 def get_engines():
-    # Asegúrate de tener estas variables en tus Secrets de Streamlit
     eng_dic = create_engine(st.secrets["databases"]["url_dic"], pool_pre_ping=True, pool_recycle=1800)
     eng_scada = create_engine(st.secrets["databases"]["url_scada"], pool_pre_ping=True, pool_recycle=1800)
     return eng_dic, eng_scada
@@ -33,8 +32,13 @@ tags = "', '".join(df_dic['bomba'].tolist())
 query = f"SELECT r.NAME, h.VALUE, h.FECHA FROM VfiTagNumHistory_Ultimo h JOIN VfiTagRef r ON h.GATEID = r.GATEID WHERE r.NAME IN ('{tags}') AND h.FECHA = (SELECT MAX(FECHA) FROM VfiTagNumHistory_Ultimo WHERE GATEID = h.GATEID)"
 df = pd.read_sql(query, ENGINE_SCADA)
 
-# Auxiliares
-lista_aux_tags = "', '".join(list(set(df_dic['H_arranque'].tolist() + df_dic['H_paro'].tolist() + df_dic['nivel_tanque'].dropna().tolist() + df_dic['voltaje_L1'].dropna().tolist())))
+# Auxiliares (Incluimos todas las columnas necesarias)
+cols_aux = ['H_arranque', 'H_paro', 'nivel_tanque', 'nivel_arranque_tq', 'nivel_paro_tq', 'voltaje_L1', 'voltaje_L2', 'voltaje_L3']
+lista_aux_tags = []
+for col in cols_aux:
+    lista_aux_tags.extend(df_dic[col].dropna().tolist())
+lista_aux_tags = "', '".join(list(set(lista_aux_tags)))
+
 df_h = pd.read_sql(f"SELECT r.NAME, h.VALUE FROM VfiTagNumHistory_Ultimo h JOIN VfiTagRef r ON h.GATEID = r.GATEID WHERE r.NAME IN ('{lista_aux_tags}') AND h.FECHA = (SELECT MAX(FECHA) FROM VfiTagNumHistory_Ultimo WHERE GATEID = h.GATEID)", ENGINE_SCADA)
 mapa_aux = dict(zip(df_h['NAME'], df_h['VALUE']))
 
@@ -45,9 +49,10 @@ for _, row in df.iterrows():
     pozo = info['Pozos']
     inc = mapa_inc.get(pozo.replace('-', ''), "Sin incidencia")
     
-    # Datos comunes
+    # Datos completos mapeados
     fila = {
         "Pozo": pozo, "Fecha": row['FECHA'].strftime('%d/%m/%y'), "Hora": row['FECHA'].strftime('%H:%M:%S'),
+        "Incidencia": inc,
         "H_paro": convertir_a_hora(mapa_aux.get(info['H_paro'], 0)),
         "H_arranque": convertir_a_hora(mapa_aux.get(info['H_arranque'], 0)),
         "Nivel": float(mapa_aux.get(info['nivel_tanque'], 0)),
@@ -59,12 +64,10 @@ for _, row in df.iterrows():
     }
 
     if row['VALUE'] == 0:
-        # Lógica de Estatus
         estatus = "❌ Desconocida"
         if inc != "Sin incidencia": estatus = "⚠️ Parado por incidencia"
         elif fila['Nivel'] < (fila['Niv_Arr'] * 0.3): estatus = "No arranca con su condición de tanque"
         
-        fila["Incidencia"] = inc
         fila["Estatus_Paro"] = estatus
         lista_apg.append(fila)
     else:
@@ -84,7 +87,6 @@ with tab1:
             elif 'no arranca' in str(val).lower(): color = '#FF4500'
             return f'background-color: {color}; color: black'
 
-        # Usamos .map en lugar de applymap para compatibilidad con versiones nuevas
         st.dataframe(df_apg.style.map(color_row, subset=['Estatus_Paro']), use_container_width=True)
     else:
         st.info("No hay pozos apagados actualmente.")
