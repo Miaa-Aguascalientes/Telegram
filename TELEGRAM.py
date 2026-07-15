@@ -25,14 +25,17 @@ st.title("Sistema de Monitoreo MIAA 24/7")
 
 # Consultas
 df_dic = pd.read_sql("SELECT * FROM Diccionario_de_pozos WHERE bomba != 'Sin telemetria'", ENGINE_DIC)
-df_inc = pd.read_sql("SELECT NUM_POZO, DIAGNOSTICO_FALLA FROM vw_incidencias_en_pozos WHERE ESTATUS != 'Cerrada'", ENGINE_SCADA)
+
+# Incidencias recientes primero (DESC)
+query_inc = "SELECT NUM_POZO, DIAGNOSTICO_FALLA FROM vw_incidencias_en_pozos WHERE ESTATUS != 'Cerrada' ORDER BY FECHA_INICIO DESC"
+df_inc = pd.read_sql(query_inc, ENGINE_SCADA)
 mapa_inc = dict(zip(df_inc['NUM_POZO'].str.replace('-', ''), df_inc['DIAGNOSTICO_FALLA']))
 
 tags = "', '".join(df_dic['bomba'].tolist())
 query = f"SELECT r.NAME, h.VALUE, h.FECHA FROM VfiTagNumHistory_Ultimo h JOIN VfiTagRef r ON h.GATEID = r.GATEID WHERE r.NAME IN ('{tags}') AND h.FECHA = (SELECT MAX(FECHA) FROM VfiTagNumHistory_Ultimo WHERE GATEID = h.GATEID)"
 df = pd.read_sql(query, ENGINE_SCADA)
 
-# Auxiliares (Incluimos todas las columnas necesarias)
+# Auxiliares
 cols_aux = ['H_arranque', 'H_paro', 'nivel_tanque', 'nivel_arranque_tq', 'nivel_paro_tq', 'voltaje_L1', 'voltaje_L2', 'voltaje_L3']
 lista_aux_tags = []
 for col in cols_aux:
@@ -49,18 +52,21 @@ for _, row in df.iterrows():
     pozo = info['Pozos']
     inc = mapa_inc.get(pozo.replace('-', ''), "Sin incidencia")
     
-    # Datos completos mapeados
+    # Formateo de valores: Niveles a 2 decimales, Voltajes a 0
+    nivel = round(float(mapa_aux.get(info['nivel_tanque'], 0)), 2)
+    niv_arr = round(float(mapa_aux.get(info['nivel_arranque_tq'], 0)), 2)
+    niv_par = round(float(mapa_aux.get(info['nivel_paro_tq'], 0)), 2)
+    v1 = int(float(mapa_aux.get(info['voltaje_L1'], 0)))
+    v2 = int(float(mapa_aux.get(info['voltaje_L2'], 0)))
+    v3 = int(float(mapa_aux.get(info['voltaje_L3'], 0)))
+    
     fila = {
         "Pozo": pozo, "Fecha": row['FECHA'].strftime('%d/%m/%y'), "Hora": row['FECHA'].strftime('%H:%M:%S'),
         "Incidencia": inc,
         "H_paro": convertir_a_hora(mapa_aux.get(info['H_paro'], 0)),
         "H_arranque": convertir_a_hora(mapa_aux.get(info['H_arranque'], 0)),
-        "Nivel": float(mapa_aux.get(info['nivel_tanque'], 0)),
-        "Niv_Arr": float(mapa_aux.get(info['nivel_arranque_tq'], 0)),
-        "Niv_Par": float(mapa_aux.get(info['nivel_paro_tq'], 0)),
-        "V_L1": float(mapa_aux.get(info['voltaje_L1'], 0)),
-        "V_L2": float(mapa_aux.get(info['voltaje_L2'], 0)),
-        "V_L3": float(mapa_aux.get(info['voltaje_L3'], 0))
+        "Nivel": nivel, "Niv_Arr": niv_arr, "Niv_Par": niv_par,
+        "V_L1": v1, "V_L2": v2, "V_L3": v3
     }
 
     if row['VALUE'] == 0:
