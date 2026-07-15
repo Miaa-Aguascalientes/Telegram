@@ -6,42 +6,25 @@ from datetime import time
 st.set_page_config(layout="wide", page_title="Sistema de monitoreo", page_icon="https://www.miaa.mx/favicon.ico")
 
 # --- CSS DE DISEÑO ---
-st.markdown("""
-    <style>
+st.write("""
+<style>
     #MainMenu, header {visibility: hidden;}
     .block-container {padding-top: 0.5rem !important; padding-bottom: 0rem !important;}
-    
-    .custom-title {
-        color: #00E5FF !important; 
-        font-size: 3.5rem;
-        font-weight: bold;
-        text-shadow: none !important;
-        margin: 0;
-        text-align: center;
-    }
+    .custom-title {color: #00E5FF !important; font-size: 3.5rem; font-weight: bold; text-shadow: none !important; margin: 0; text-align: center;}
     .logo-container {display: flex; justify-content: center;}
-    
-    /* Estilo para las tarjetas de indicadores */
-    .dashboard-card {
-        background-color: #0e1117;
-        border: 1px solid #262730;
-        border-radius: 10px;
-        padding: 15px;
-        text-align: center;
-        margin: 5px;
-    }
+    .dashboard-card {background-color: #0e1117; border: 1px solid #262730; border-radius: 10px; padding: 15px; text-align: center; margin: 5px;}
     .card-label {color: #ffffff; font-size: 0.9rem; margin-bottom: 10px;}
     .card-value {font-size: 1.8rem; font-weight: bold;}
-    </style>
-""", unsafe_html=True)
+</style>
+""", unsafe_allow_html=True)
 
 def render_card(label, value, color_val, icon):
-    st.markdown(f"""
+    st.write(f"""
         <div class="dashboard-card">
             <div class="card-label">{icon} {label}</div>
             <div class="card-value" style="color: {color_val}">{value}</div>
         </div>
-    """, unsafe_html=True)
+    """, unsafe_allow_html=True)
 
 # --- CONEXIÓN ---
 @st.cache_resource
@@ -69,7 +52,6 @@ with col2:
 
 # --- LÓGICA DE DATOS ---
 df_dic = pd.read_sql("SELECT * FROM Diccionario_de_pozos WHERE bomba != 'Sin telemetria'", ENGINE_DIC)
-
 try:
     query_inc = "SELECT NUM_POZO, DIAGNOSTICO_FALLA FROM vw_incidencias_en_pozos WHERE ESTATUS != 'Cerrada'"
     df_inc = pd.read_sql(query_inc, ENGINE_SCADA)
@@ -112,12 +94,11 @@ if lista_apg:
     df_final = pd.DataFrame(lista_apg).sort_values(by='TS', ascending=False)
     
     # Cálculos
-    total = len(df_final)
-    normal = len(df_final[df_final['Estatus_Paro'].str.contains('✅')])
+    total, normal = len(df_final), len(df_final[df_final['Estatus_Paro'].str.contains('✅')])
     incidencia = len(df_final[df_final['Estatus_Paro'].str.contains('⚠️')])
     desconocida = len(df_final[df_final['Estatus_Paro'].str.contains('❌')])
 
-    # Renderizar tarjetas de indicadores
+    # Indicadores
     c1, c2, c3, c4 = st.columns(4)
     with c1: render_card("Total Apagados", total, "#FFFFFF", "🔴")
     with c2: render_card("Estatus Normal", normal, "#00FF00", "✅")
@@ -126,15 +107,14 @@ if lista_apg:
     
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # Tabla
     df_mostrar = df_final.drop(columns=['TS'])
     df_mostrar['Fecha'] = df_mostrar['Fecha'].apply(lambda x: x.strftime('%d/%m/%y'))
     df_mostrar['Hora'] = df_mostrar['Hora'].apply(lambda x: x.strftime('%H:%M:%S'))
     
     def color_text(row):
-        estatus = str(row['Estatus_Paro'])
-        color = '#FFD700' if '⚠️' in estatus else ('#00FF00' if '✅' in estatus else ('#FF0000' if '❌' in estatus else 'inherit'))
-        return [f'color: {color}'] * len(row)
+        e = str(row['Estatus_Paro'])
+        c = '#FFD700' if '⚠️' in e else ('#00FF00' if '✅' in e else ('#FF0000' if '❌' in e else 'inherit'))
+        return [f'color: {c}'] * len(row)
 
     st.dataframe(df_mostrar.style.apply(color_text, axis=1), use_container_width=True, hide_index=True, height=750)
 else:
