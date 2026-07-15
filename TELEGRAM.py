@@ -108,7 +108,7 @@ if lista_apg:
         df_final.style.apply(color_text, axis=1), 
         use_container_width=True, 
         hide_index=True,
-        height=800 
+        height=500 
     )
 else:
     st.info("No hay pozos apagados.")
