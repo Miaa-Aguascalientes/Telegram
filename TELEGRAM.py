@@ -6,26 +6,28 @@ import time as t
 
 st.set_page_config(layout="wide", page_title="Sistema de monitoreo", page_icon="https://www.miaa.mx/favicon.ico")
 
-# --- CSS DE DISEÑO COMPACTO ---
+# --- CSS DE DISEÑO: ETIQUETAS MÁS GRANDES, VALORES COMPACTOS ---
 st.write("""
 <style>
     #MainMenu, header {visibility: hidden;}
     .block-container {padding-top: 0.2rem !important; padding-bottom: 0rem !important;}
     .custom-title {color: #00E5FF !important; font-size: 2rem; font-weight: bold; margin-bottom: 5px; text-align: center;}
     .logo-container {display: flex; justify-content: center;}
-    /* Tarjetas ultra delgadas */
+    
     .dashboard-card {
         background-color: #0e1117; 
         border: 1px solid #262730; 
         border-radius: 5px; 
-        padding: 2px 5px !important; 
+        padding: 4px 8px !important; 
         text-align: center; 
         margin: 1px !important;
         display: flex;
         justify-content: space-between;
         align-items: center;
     }
-    .card-label {color: #ffffff; font-size: 0.65rem !important; margin: 0 !important;}
+    /* Etiquetas más grandes */
+    .card-label {color: #ffffff; font-size: 0.85rem !important; font-weight: 500; margin: 0 !important;}
+    /* Valores compactos */
     .card-value {font-size: 1rem !important; font-weight: bold; margin-left: 10px;}
 </style>
 """, unsafe_allow_html=True)
@@ -113,7 +115,6 @@ while True:
         df_final = pd.DataFrame(lista_apg).sort_values(by='TS', ascending=False) if lista_apg else pd.DataFrame()
         df_enc_full = pd.DataFrame(lista_enc).sort_values(by='TS', ascending=False) if lista_enc else pd.DataFrame()
         
-        # Indicadores compactos
         cols_ind = st.columns(4)
         with cols_ind[0]: render_card("Total Apagados", len(df_final), "#FFFFFF", "🔴")
         with cols_ind[1]: render_card("Estatus Normal", len(df_final[df_final['Estatus_Paro'].str.contains('✅', na=False)]), "#00FF00", "✅")
