@@ -25,7 +25,7 @@ st.title("Sistema de Monitoreo MIAA 24/7")
 
 df_dic = pd.read_sql("SELECT * FROM Diccionario_de_pozos WHERE bomba != 'Sin telemetria'", ENGINE_DIC)
 
-# CONSULTA ORDENADA POR FECHA (MÁS RECIENTE A MÁS ANTIGUA)
+# 1. Incidencias con orden DESC para obtener las más recientes primero
 try:
     query_inc = "SELECT NUM_POZO, DIAGNOSTICO_FALLA FROM vw_incidencias_en_pozos WHERE ESTATUS != 'Cerrada' ORDER BY FECHA_INICIO DESC"
     df_inc = pd.read_sql(query_inc, ENGINE_SCADA)
@@ -34,10 +34,19 @@ try:
 except:
     mapa_inc = {}
 
+# 2. Datos SCADA ordenados por fecha (MÁS RECIENTES PRIMERO)
 tags = "', '".join(df_dic['bomba'].tolist())
-query = f"SELECT r.NAME, h.VALUE, h.FECHA FROM VfiTagNumHistory_Ultimo h JOIN VfiTagRef r ON h.GATEID = r.GATEID WHERE r.NAME IN ('{tags}') AND h.FECHA = (SELECT MAX(FECHA) FROM VfiTagNumHistory_Ultimo WHERE GATEID = h.GATEID)"
+query = f"""
+SELECT r.NAME, h.VALUE, h.FECHA 
+FROM VfiTagNumHistory_Ultimo h 
+JOIN VfiTagRef r ON h.GATEID = r.GATEID 
+WHERE r.NAME IN ('{tags}') 
+AND h.FECHA = (SELECT MAX(FECHA) FROM VfiTagNumHistory_Ultimo WHERE GATEID = h.GATEID)
+ORDER BY h.FECHA DESC
+"""
 df = pd.read_sql(query, ENGINE_SCADA)
 
+# 3. Auxiliares
 cols_aux = ['H_arranque', 'H_paro', 'nivel_tanque', 'nivel_arranque_tq', 'nivel_paro_tq', 'voltaje_L1', 'voltaje_L2', 'voltaje_L3']
 tags_aux = [str(t) for col in cols_aux for t in df_dic[col].dropna().unique()]
 query_aux = f"SELECT r.NAME, h.VALUE FROM VfiTagNumHistory_Ultimo h JOIN VfiTagRef r ON h.GATEID = r.GATEID WHERE r.NAME IN ('{"', '".join(tags_aux)}') AND h.FECHA = (SELECT MAX(FECHA) FROM VfiTagNumHistory_Ultimo WHERE GATEID = h.GATEID)"
@@ -46,7 +55,7 @@ mapa_aux = dict(zip(df_h['NAME'].astype(str), df_h['VALUE']))
 
 lista_apg = []
 
-# Iteramos respetando el orden original de df (o podrías ordenar df aquí si es necesario)
+# Iterar sobre el DataFrame ya ordenado
 for _, row in df.iterrows():
     info = df_dic[df_dic['bomba'] == row['NAME']].iloc[0]
     pozo_key = str(info['Pozos']).replace('-', '').replace(' ', '')
@@ -83,7 +92,6 @@ for _, row in df.iterrows():
 # --- VISUALIZACIÓN ---
 if lista_apg:
     df_final = pd.DataFrame(lista_apg)
-    
     def color_row(val):
         v = str(val).lower()
         if 'incidencia' in v or 'fuga' in v or 'desgaste' in v or 'abierto' in v or 'preventivo' in v: return 'background-color: #FFD700; color: black'
