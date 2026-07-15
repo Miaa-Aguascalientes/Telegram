@@ -88,6 +88,7 @@ while True:
             pozo_key = str(info['Pozos']).replace('-', '').replace(' ', '')
             inc = mapa_inc.get(pozo_key, "Sin incidencia")
             
+            # Aseguramos que el registro tenga el timestamp para ordenar
             data_row = {
                 "Pozo": info['Pozos'], "Fecha": row['FECHA'].date(), "Hora": row['FECHA'].time(),
                 "Incidencia": inc, "H_paro": convertir_a_hora(mapa_aux.get(str(info['H_paro']))), 
@@ -98,19 +99,19 @@ while True:
                 "V_L1": int(float(mapa_aux.get(str(info['voltaje_L1']), 0) or 0)), 
                 "V_L2": int(float(mapa_aux.get(str(info['voltaje_L2']), 0) or 0)), 
                 "V_L3": int(float(mapa_aux.get(str(info['voltaje_L3']), 0) or 0)),
-                "TS": row['FECHA']
+                "TS": row['FECHA'] # Mantenemos el timestamp real
             }
 
             if row['VALUE'] == 0:
-                # Estatus corregido
                 estatus = "⚠️ Parado por incidencia" if inc != "Sin incidencia" else ("✅ Normal" if (float(mapa_aux.get(str(info['nivel_arranque_tq']), 0) or 0) > 0) else "❌ Desconocida")
                 data_row["Estatus_Paro"] = estatus
                 lista_apg.append(data_row)
             else:
                 lista_enc.append(data_row)
 
-        df_final = pd.DataFrame(lista_apg)
-        df_enc_full = pd.DataFrame(lista_enc)
+        # ORDENAMIENTO EXPLÍCITO DE AMBAS LISTAS
+        df_final = pd.DataFrame(lista_apg).sort_values(by='TS', ascending=False).reset_index(drop=True) if lista_apg else pd.DataFrame()
+        df_enc_full = pd.DataFrame(lista_enc).sort_values(by='TS', ascending=False).reset_index(drop=True) if lista_enc else pd.DataFrame()
         
         # Validación para evitar KeyError en los indicadores
         cols_ind = st.columns(4)
