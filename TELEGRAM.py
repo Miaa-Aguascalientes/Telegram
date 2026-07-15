@@ -138,9 +138,21 @@ while True:
         
         st.markdown("<hr style='margin: 10px 0; border: 1px solid #00E5FF;'>", unsafe_allow_html=True)
         
-        col_izq, col_der = st.columns([0.65, 0.35])
-        
+        # Configuración de estilos
         cols_centradas = ["Nivel", "Niv_Arr", "Niv_Par", "V_L1", "V_L2", "V_L3"]
+        
+        def estilo_estandar(row):
+            estilos = ['text-align: left;'] * len(row)
+            for i, col in enumerate(row.index):
+                if col in cols_centradas: 
+                    estilos[i] = 'text-align: center;'
+                if col == 'Estatus_Paro':
+                    e = str(row['Estatus_Paro'])
+                    c = '#FFD700' if '⚠️' in e else ('#00FF00' if '✅' in e else ('#FF0000' if '❌' in e else 'inherit'))
+                    estilos[i] = f'text-align: left; color: {c};'
+            return estilos
+        
+        col_izq, col_der = st.columns([0.65, 0.35])
         
         with col_izq:
             st.subheader("🔴 Pozos Apagados")
@@ -149,18 +161,7 @@ while True:
                 df_mostrar = df_final[cols_orden].copy()
                 df_mostrar['Fecha'] = df_mostrar['Fecha'].apply(lambda x: x.strftime('%d/%m/%y'))
                 df_mostrar['Hora'] = df_mostrar['Hora'].apply(lambda x: x.strftime('%H:%M:%S'))
-                
-                def estilo_fila(row):
-                    estilos = ['text-align: left;'] * len(row)
-                    for i, col in enumerate(row.index):
-                        if col in cols_centradas: estilos[i] = 'text-align: center;'
-                        if col == 'Estatus_Paro':
-                            e = str(row['Estatus_Paro'])
-                            c = '#FFD700' if '⚠️' in e else ('#00FF00' if '✅' in e else ('#FF0000' if '❌' in e else 'inherit'))
-                            estilos[i] = f'text-align: left; color: {c};'
-                    return estilos
-
-                st.dataframe(df_mostrar.style.apply(estilo_fila, axis=1), use_container_width=True, hide_index=True)
+                st.dataframe(df_mostrar.style.apply(estilo_estandar, axis=1), use_container_width=True, hide_index=True)
             else: st.info("No hay pozos apagados.")
 
         with col_der:
@@ -169,8 +170,7 @@ while True:
                 df_enc = df_enc_full.drop(columns=['TS', 'Incidencia'], errors='ignore')
                 df_enc['Fecha'] = df_enc['Fecha'].apply(lambda x: x.strftime('%d/%m/%y'))
                 df_enc['Hora'] = df_enc['Hora'].apply(lambda x: x.strftime('%H:%M:%S'))
-                
-                st.dataframe(df_enc.style.set_properties(**{'text-align': 'center'}, subset=cols_centradas), use_container_width=True, hide_index=True)
+                st.dataframe(df_enc.style.apply(estilo_estandar, axis=1), use_container_width=True, hide_index=True)
             else: st.info("No hay pozos operando.")
     
     t.sleep(30)
