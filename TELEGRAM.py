@@ -32,10 +32,10 @@ try:
     df_inc['KEY'] = df_inc['NUM_POZO'].astype(str).str.replace(r'[- ]', '', regex=True)
     mapa_inc = dict(zip(df_inc['KEY'], df_inc['DIAGNOSTICO_FALLA']))
 except Exception as e:
-    st.error(f"Error al cargar la tabla de incidencias: {e}")
+    st.error(f"Error al cargar incidencias: {e}")
     mapa_inc = {}
 
-# Carga de Datos SCADA (Ordenados por fecha más reciente)
+# Carga de SCADA
 tags = "', '".join(df_dic['bomba'].tolist())
 query = f"""
 SELECT r.NAME, h.VALUE, h.FECHA 
@@ -63,20 +63,17 @@ for _, row in df.iterrows():
     
     def get_val(c): return mapa_aux.get(str(info.get(c)))
     
-    val_nivel = float(mapa_aux.get(info['nivel_tanque'], 0))
-    val_n_arr = float(mapa_aux.get(info['nivel_arranque_tq'], 0))
-    val_n_par = float(mapa_aux.get(info['nivel_paro_tq'], 0))
+    # Obtenemos valores con manejo de nulos (default 0)
+    val_nivel = float(mapa_aux.get(info['nivel_tanque'], 0) or 0)
+    val_n_arr = float(mapa_aux.get(info['nivel_arranque_tq'], 0) or 0)
+    val_n_par = float(mapa_aux.get(info['nivel_paro_tq'], 0) or 0)
     
     if row['VALUE'] == 0:
         # LÓGICA DE ESTATUS CORREGIDA:
-        # 1. Si hay incidencia, es Amarillo
-        # 2. Si el nivel es mayor al de arranque (tanque lleno/suficiente), es Normal (Verde)
-        # 3. Si el nivel está entre arranque y paro, es Normal (Verde)
+        # Si no hay niveles (todos son 0), no puede ser Normal.
         if inc != "Sin incidencia":
             estatus = "⚠️ Parado por incidencia"
-        elif val_nivel >= val_n_arr:
-            estatus = "✅ Normal"
-        elif val_n_par > val_nivel > val_n_arr:
+        elif (val_nivel > 0 or val_n_arr > 0 or val_n_par > 0) and (val_nivel >= val_n_arr or (val_n_par > val_nivel > val_n_arr)):
             estatus = "✅ Normal"
         else:
             estatus = "❌ Desconocida"
