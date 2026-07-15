@@ -6,7 +6,7 @@ import time as t
 
 st.set_page_config(layout="wide", page_title="Sistema de monitoreo", page_icon="https://www.miaa.mx/favicon.ico")
 
-# --- CSS DE DISEÑO ---
+# --- CSS DE DISEÑO ORIGINAL ---
 st.write("""
 <style>
     #MainMenu, header {visibility: hidden;}
@@ -41,7 +41,7 @@ def convertir_a_hora(valor):
         return time(int((m // 60) % 24), int(m % 60))
     except: return time(0, 0)
 
-# Cabecera
+# Cabecera original
 col1, col2 = st.columns([1, 10])
 with col1:
     st.markdown('<div class="logo-container">', unsafe_allow_html=True)
@@ -54,76 +54,90 @@ placeholder = st.empty()
 
 while True:
     with placeholder.container():
-        # --- LÓGICA DE DATOS ---
+        # --- LÓGICA DE DATOS ORIGINAL ---
         df_dic = pd.read_sql("SELECT * FROM Diccionario_de_pozos WHERE bomba != 'Sin telemetria'", ENGINE_DIC)
-        
-        mapa_inc = {}
         try:
             query_inc = "SELECT NUM_POZO, DIAGNOSTICO_FALLA FROM vw_incidencias_en_pozos WHERE ESTATUS != 'Cerrada'"
             df_inc = pd.read_sql(query_inc, ENGINE_SCADA)
             df_inc['KEY'] = df_inc['NUM_POZO'].astype(str).str.replace(r'[- ]', '', regex=True)
             mapa_inc = dict(zip(df_inc['KEY'], df_inc['DIAGNOSTICO_FALLA']))
-        except: pass
+        except: mapa_inc = {}
 
         tags = "', '".join(df_dic['bomba'].tolist())
-        query = f"SELECT r.NAME, h.VALUE, h.FECHA FROM VfiTagNumHistory_Ultimo h JOIN VfiTagRef r ON h.GATEID = r.GATEID WHERE r.NAME IN ('{tags}') AND h.FECHA = (SELECT MAX(FECHA) FROM VfiTagNumHistory_Ultimo WHERE GATEID = h.GATEID)"
+        query = f"SELECT r.NAME, h.VALUE, h.FECHA FROM VfiTagNumHistory_Ultimo h JOIN VfiTagRef r ON h.GATEID = r.GATEID WHERE r.NAME IN ('{tags}') AND h.FECHA = (SELECT MAX(FECHA) FROM VfiTagNumHistory_Ultimo WHERE GATEID = h.GATEID) ORDER BY h.FECHA DESC"
         df = pd.read_sql(query, ENGINE_SCADA)
 
         cols_aux = ['H_arranque', 'H_paro', 'nivel_tanque', 'nivel_arranque_tq', 'nivel_paro_tq', 'voltaje_L1', 'voltaje_L2', 'voltaje_L3']
         tags_aux = [str(t) for col in cols_aux for t in df_dic[col].dropna().unique()]
-        
-        mapa_aux = {}
-        try:
-            query_aux = f"SELECT r.NAME, h.VALUE FROM VfiTagNumHistory_Ultimo h JOIN VfiTagRef r ON h.GATEID = r.GATEID WHERE r.NAME IN ('{"', '".join(tags_aux)}') AND h.FECHA = (SELECT MAX(FECHA) FROM VfiTagNumHistory_Ultimo WHERE GATEID = h.GATEID)"
-            df_h = pd.read_sql(query_aux, ENGINE_SCADA)
-            mapa_aux = dict(zip(df_h['NAME'].astype(str), df_h['VALUE']))
-        except: pass
+        query_aux = f"SELECT r.NAME, h.VALUE FROM VfiTagNumHistory_Ultimo h JOIN VfiTagRef r ON h.GATEID = r.GATEID WHERE r.NAME IN ('{"', '".join(tags_aux)}') AND h.FECHA = (SELECT MAX(FECHA) FROM VfiTagNumHistory_Ultimo WHERE GATEID = h.GATEID)"
+        df_h = pd.read_sql(query_aux, ENGINE_SCADA)
+        mapa_aux = dict(zip(df_h['NAME'].astype(str), df_h['VALUE']))
 
         lista_apg, lista_enc = [], []
         def format_val(v): return f"{v:.2f}" if v > 0 else ""
 
         for _, row in df.iterrows():
             info = df_dic[df_dic['bomba'] == row['NAME']].iloc[0]
+            pozo_key = str(info['Pozos']).replace('-', '').replace(' ', '')
+            inc = mapa_inc.get(pozo_key, "Sin incidencia")
             val_nivel = float(mapa_aux.get(str(info['nivel_tanque']), 0) or 0)
+            val_n_arr = float(mapa_aux.get(str(info['nivel_arranque_tq']), 0) or 0)
+            val_n_par = float(mapa_aux.get(str(info['nivel_paro_tq']), 0) or 0)
             
             data_row = {
                 "Pozo": info['Pozos'], "Fecha": row['FECHA'].date(), "Hora": row['FECHA'].time(),
-                "H_paro": convertir_a_hora(mapa_aux.get(str(info['H_paro']))), 
+                "Incidencia": inc, "H_paro": convertir_a_hora(mapa_aux.get(str(info['H_paro']))), 
                 "H_arranque": convertir_a_hora(mapa_aux.get(str(info['H_arranque']))),
-                "Nivel": format_val(val_nivel), 
-                "Niv_Arr": format_val(mapa_aux.get(str(info['nivel_arranque_tq']), 0)), 
-                "Niv_Par": format_val(mapa_aux.get(str(info['nivel_paro_tq']), 0)),
-                "V_L1": int(float(mapa_aux.get(str(info['voltaje_L1']), 0))), 
-                "V_L2": int(float(mapa_aux.get(str(info['voltaje_L2']), 0))), 
-                "V_L3": int(float(mapa_aux.get(str(info['voltaje_L3']), 0)))
+                "Nivel": format_val(val_nivel), "Niv_Arr": format_val(val_n_arr), "Niv_Par": format_val(val_n_par),
+                "V_L1": int(float(mapa_aux.get(str(info['voltaje_L1']), 0) or 0)), 
+                "V_L2": int(float(mapa_aux.get(str(info['voltaje_L2']), 0) or 0)), 
+                "V_L3": int(float(mapa_aux.get(str(info['voltaje_L3']), 0) or 0))
             }
-            
+
             if row['VALUE'] == 0:
-                pozo_key = str(info['Pozos']).replace('-', '').replace(' ', '')
-                data_row["Estatus"] = f"⚠️ {mapa_inc.get(pozo_key, 'Incidencia')}"
+                estatus = f"⚠️ {inc}" if inc != "Sin incidencia" else ("✅ Normal" if (val_n_arr > 0 and val_n_par > 0 and (val_nivel >= val_n_arr or (val_n_par > val_nivel > val_n_arr))) else "❌ Desconocida")
+                data_row["Estatus_Paro"] = estatus
                 lista_apg.append(data_row)
             else:
                 lista_enc.append(data_row)
 
         # --- VISUALIZACIÓN ---
-        def color_text_apg(row):
-            e = str(row['Estatus'])
-            c = '#FFD700' if '⚠️' in e else '#FF0000'
-            return [f'color: {c}'] * len(row)
+        if lista_apg or lista_enc:
+            # Cálculos de indicadores originales
+            total = len(lista_apg)
+            normal = sum(1 for x in lista_apg if '✅' in x['Estatus_Paro'])
+            incidencia = sum(1 for x in lista_apg if '⚠️' in x['Estatus_Paro'])
+            desconocida = sum(1 for x in lista_apg if '❌' in x['Estatus_Paro'])
 
-        c_left, c_right = st.columns(2)
-        
-        with c_left:
-            st.subheader("🔴 Pozos Apagados")
-            if lista_apg: 
-                df_apg = pd.DataFrame(lista_apg)
-                st.dataframe(df_apg.style.apply(color_text_apg, axis=1), use_container_width=True, hide_index=True)
-            else: st.info("Ninguno")
-                
-        with c_right:
-            st.subheader("🟢 Pozos Encendidos")
-            if lista_enc: 
-                st.dataframe(pd.DataFrame(lista_enc), use_container_width=True, hide_index=True)
-            else: st.info("Ninguno")
+            c1, c2, c3, c4 = st.columns(4)
+            with c1: render_card("Total Apagados", total, "#FFFFFF", "🔴")
+            with c2: render_card("Estatus Normal", normal, "#00FF00", "✅")
+            with c3: render_card("Por Incidencia", incidencia, "#FFD700", "⚠️")
+            with c4: render_card("Desconocida", desconocida, "#FF0000", "❌")
+            
+            st.markdown("<br>", unsafe_allow_html=True)
+
+            # Division de columnas para las tablas
+            c_left, c_right = st.columns(2)
+
+            with c_left:
+                st.subheader("🔴 Pozos Apagados")
+                if lista_apg:
+                    df_apg = pd.DataFrame(lista_apg)
+                    # Formato original aplicado
+                    def color_text(row):
+                        e = str(row['Estatus_Paro'])
+                        c = '#FFD700' if '⚠️' in e else ('#00FF00' if '✅' in e else ('#FF0000' if '❌' in e else 'inherit'))
+                        return [f'color: {c}'] * len(row)
+                    st.dataframe(df_apg.style.apply(color_text, axis=1), use_container_width=True, hide_index=True)
+                else: st.info("No hay pozos apagados.")
+
+            with c_right:
+                st.subheader("🟢 Pozos Encendidos")
+                if lista_enc:
+                    st.dataframe(pd.DataFrame(lista_enc), use_container_width=True, hide_index=True)
+                else: st.info("No hay pozos encendidos.")
+        else:
+            st.info("No hay actividad de pozos.")
 
     t.sleep(30)
