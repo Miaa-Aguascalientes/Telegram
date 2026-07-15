@@ -17,11 +17,11 @@ st.markdown("""
         font-weight: bold;
         text-shadow: none !important;
         margin: 0;
-        text-align: center;
+        text-align: center; /* Centrado del texto */
     }
     .logo-container {
         display: flex;
-        justify-content: center;
+        justify-content: center; /* Centrado del logo */
     }
     </style>
 """, unsafe_allow_html=True)
