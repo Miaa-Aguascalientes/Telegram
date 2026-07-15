@@ -125,7 +125,6 @@ while True:
         df_final = pd.DataFrame(lista_apg).sort_values(by='TS', ascending=False).reset_index(drop=True) if lista_apg else pd.DataFrame()
         df_enc_full = pd.DataFrame(lista_enc).sort_values(by='TS', ascending=False).reset_index(drop=True) if lista_enc else pd.DataFrame()
         
-        # --- INDICADORES ---
         cols_ind = st.columns(4)
         with cols_ind[0]: render_card("Total Apagados", len(df_final), "#FFFFFF", "🔴")
         if not df_final.empty:
@@ -138,18 +137,18 @@ while True:
         
         st.markdown("<hr style='margin: 10px 0; border: 1px solid #00E5FF;'>", unsafe_allow_html=True)
         
-        # Configuración de estilos
+        # --- ESTILO REFORZADO ---
         cols_centradas = ["Nivel", "Niv_Arr", "Niv_Par", "V_L1", "V_L2", "V_L3"]
         
         def estilo_estandar(row):
             estilos = ['text-align: left;'] * len(row)
             for i, col in enumerate(row.index):
                 if col in cols_centradas: 
-                    estilos[i] = 'text-align: center;'
+                    estilos[i] = 'text-align: center !important;'
                 if col == 'Estatus_Paro':
                     e = str(row['Estatus_Paro'])
                     c = '#FFD700' if '⚠️' in e else ('#00FF00' if '✅' in e else ('#FF0000' if '❌' in e else 'inherit'))
-                    estilos[i] = f'text-align: left; color: {c};'
+                    estilos[i] = f'text-align: left !important; color: {c} !important;'
             return estilos
         
         col_izq, col_der = st.columns([0.65, 0.35])
