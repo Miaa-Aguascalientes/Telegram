@@ -82,13 +82,24 @@ while True:
 
         lista_apg, lista_enc = [], []
         def format_val(v):
-            # Si el valor es None, 0 o vacío, devuelve "Directo a red"
-            if v is None or float(v) == 0:
+            try:
+                # Convertimos a float de forma segura
+                valor = float(v)
+                if valor <= 0:
+                    return "Directo a red"
+                return f"{valor:.2f}"
+            except (ValueError, TypeError):
+                # Si viene None, vacío o texto basura, devuelve "Directo a red"
                 return "Directo a red"
-            return f"{v:.2f}"
 
         for _, row in df.iterrows():
-            # ... (resto de tu código)
+            df_match = df_dic[df_dic['bomba'] == row['NAME']]
+            if df_match.empty: continue
+            info = df_match.iloc[0]
+            
+            pozo_key = str(info['Pozos']).replace('-', '').replace(' ', '')
+            inc = mapa_inc.get(pozo_key, "Sin incidencia")
+            
             data_row = {
                 "Pozo": info['Pozos'], 
                 "Fecha": row['FECHA'].date(), 
@@ -96,10 +107,10 @@ while True:
                 "Incidencia": inc, 
                 "H_paro": convertir_a_hora(mapa_aux.get(str(info['H_paro']))), 
                 "H_arranque": convertir_a_hora(mapa_aux.get(str(info['H_arranque']))),
-                # Ahora se usará la nueva lógica de formato aquí:
-                "Nivel": format_val(mapa_aux.get(str(info['nivel_tanque']))),
-                "Niv_Arr": format_val(mapa_aux.get(str(info['nivel_arranque_tq']))),
-                "Niv_Par": format_val(mapa_aux.get(str(info['nivel_paro_tq']))),
+                # Usamos .get(..., 0) para asegurar que siempre pasamos algo a la función
+                "Nivel": format_val(mapa_aux.get(str(info['nivel_tanque']), 0)),
+                "Niv_Arr": format_val(mapa_aux.get(str(info['nivel_arranque_tq']), 0)),
+                "Niv_Par": format_val(mapa_aux.get(str(info['nivel_paro_tq']), 0)),
                 "V_L1": int(float(mapa_aux.get(str(info['voltaje_L1']), 0) or 0)), 
                 "V_L2": int(float(mapa_aux.get(str(info['voltaje_L2']), 0) or 0)), 
                 "V_L3": int(float(mapa_aux.get(str(info['voltaje_L3']), 0) or 0)),
