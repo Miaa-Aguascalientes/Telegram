@@ -101,7 +101,6 @@ while True:
             else:
                 lista_enc.append(data_row)
 
-        # Visualización
         df_final = pd.DataFrame(lista_apg).sort_values(by='TS', ascending=False) if lista_apg else pd.DataFrame()
         
         c1, c2, c3, c4 = st.columns(4)
@@ -120,7 +119,14 @@ while True:
                 df_mostrar = df_final[cols_orden].copy()
                 df_mostrar['Fecha'] = df_mostrar['Fecha'].apply(lambda x: x.strftime('%d/%m/%y'))
                 df_mostrar['Hora'] = df_mostrar['Hora'].apply(lambda x: x.strftime('%H:%M:%S'))
-                st.dataframe(df_mostrar, use_container_width=True, hide_index=True)
+                
+                # FUNCIÓN DE COLOR CORREGIDA Y SEGURA
+                def color_fila(row):
+                    e = str(row['Estatus_Paro'])
+                    c = '#FFD700' if '⚠️' in e else ('#00FF00' if '✅' in e else ('#FF0000' if '❌' in e else 'inherit'))
+                    return [f'color: {c}'] * len(row)
+
+                st.dataframe(df_mostrar.style.apply(color_fila, axis=1), use_container_width=True, hide_index=True)
             else: st.info("No hay pozos apagados.")
 
         with col_der:
