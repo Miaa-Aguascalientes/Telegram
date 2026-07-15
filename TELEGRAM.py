@@ -81,16 +81,20 @@ while True:
         mapa_aux = dict(zip(df_h['NAME'].astype(str), df_h['VALUE']))
 
         lista_apg, lista_enc = [], []
-        def format_val(v):
+
+        def format_nivel(v):
             try:
-                # Convertimos a float de forma segura
                 valor = float(v)
-                if valor <= 0:
-                    return "Directo a red"
-                return f"{valor:.2f}"
+                return "Directo a red" if valor <= 0 else f"{valor:.2f}"
             except (ValueError, TypeError):
-                # Si viene None, vacío o texto basura, devuelve "Directo a red"
                 return "Directo a red"
+
+        def format_param(v):
+            try:
+                valor = float(v)
+                return f"{valor:.2f}" if valor > 0 else ""
+            except (ValueError, TypeError):
+                return ""
 
         for _, row in df.iterrows():
             df_match = df_dic[df_dic['bomba'] == row['NAME']]
