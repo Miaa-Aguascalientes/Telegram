@@ -5,7 +5,7 @@ from datetime import time, datetime
 
 st.set_page_config(layout="wide", page_title="Sistema de monitoreo", page_icon="https://www.miaa.mx/favicon.ico")
 
-# --- CSS DE DISEÑO (Solo estilo, no lógica) ---
+# --- CSS DE DISEÑO ---
 st.markdown("""
     <style>
     #MainMenu, header {visibility: hidden;}
@@ -17,16 +17,16 @@ st.markdown("""
         font-weight: bold;
         text-shadow: none !important;
         margin: 0;
-        text-align: center; /* Centrado del texto */
+        text-align: center;
     }
     .logo-container {
         display: flex;
-        justify-content: center; /* Centrado del logo */
+        justify-content: center;
     }
     </style>
 """, unsafe_allow_html=True)
 
-# --- CONEXIÓN (Sin cambios) ---
+# --- CONEXIÓN ---
 @st.cache_resource
 def get_engines():
     eng_dic = create_engine(st.secrets["databases"]["url_dic"], pool_pre_ping=True, pool_recycle=1800)
@@ -50,7 +50,7 @@ with col1:
 with col2:
     st.markdown('<h1 class="custom-title">Sistema de Monitoreo</h1>', unsafe_allow_html=True)
 
-# --- TU LÓGICA ORIGINAL ---
+# --- LÓGICA DE DATOS ---
 df_dic = pd.read_sql("SELECT * FROM Diccionario_de_pozos WHERE bomba != 'Sin telemetria'", ENGINE_DIC)
 
 try:
@@ -93,6 +93,23 @@ for _, row in df.iterrows():
 # --- VISUALIZACIÓN ---
 if lista_apg:
     df_final = pd.DataFrame(lista_apg).sort_values(by='TS', ascending=False)
+    
+    # --- CÁLCULO DE INDICADORES ---
+    total_apagados = len(df_final)
+    normal = len(df_final[df_final['Estatus_Paro'].str.contains('✅ Normal')])
+    incidencia = len(df_final[df_final['Estatus_Paro'].str.contains('⚠️')])
+    desconocida = len(df_final[df_final['Estatus_Paro'].str.contains('❌ Desconocida')])
+
+    # --- MOSTRAR INDICADORES ---
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Total Apagados", total_apagados)
+    m2.metric("Estatus Normal", normal)
+    m3.metric("Por Incidencia", incidencia)
+    m4.metric("Desconocida", desconocida)
+    
+    st.divider()
+
+    # --- TABLA ---
     df_final['Fecha'] = df_final['Fecha'].apply(lambda x: x.strftime('%d/%m/%y'))
     df_final['Hora'] = df_final['Hora'].apply(lambda x: x.strftime('%H:%M:%S'))
     df_final = df_final.drop(columns=['TS'])
