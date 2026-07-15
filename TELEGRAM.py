@@ -25,17 +25,14 @@ st.title("Sistema de Monitoreo MIAA 24/7")
 
 # Consultas
 df_dic = pd.read_sql("SELECT * FROM Diccionario_de_pozos WHERE bomba != 'Sin telemetria'", ENGINE_DIC)
-
-# MODIFICACIÓN: Se añade ORDER BY FECHA_INICIO DESC para obtener las más recientes primero
-query_inc = "SELECT NUM_POZO, DIAGNOSTICO_FALLA FROM vw_incidencias_en_pozos WHERE ESTATUS != 'Cerrada' ORDER BY FECHA_INICIO DESC"
-df_inc = pd.read_sql(query_inc, ENGINE_SCADA)
+df_inc = pd.read_sql("SELECT NUM_POZO, DIAGNOSTICO_FALLA FROM vw_incidencias_en_pozos WHERE ESTATUS != 'Cerrada'", ENGINE_SCADA)
 mapa_inc = dict(zip(df_inc['NUM_POZO'].str.replace('-', ''), df_inc['DIAGNOSTICO_FALLA']))
 
 tags = "', '".join(df_dic['bomba'].tolist())
 query = f"SELECT r.NAME, h.VALUE, h.FECHA FROM VfiTagNumHistory_Ultimo h JOIN VfiTagRef r ON h.GATEID = r.GATEID WHERE r.NAME IN ('{tags}') AND h.FECHA = (SELECT MAX(FECHA) FROM VfiTagNumHistory_Ultimo WHERE GATEID = h.GATEID)"
 df = pd.read_sql(query, ENGINE_SCADA)
 
-# Auxiliares
+# Auxiliares (Incluimos todas las columnas necesarias)
 cols_aux = ['H_arranque', 'H_paro', 'nivel_tanque', 'nivel_arranque_tq', 'nivel_paro_tq', 'voltaje_L1', 'voltaje_L2', 'voltaje_L3']
 lista_aux_tags = []
 for col in cols_aux:
@@ -52,6 +49,7 @@ for _, row in df.iterrows():
     pozo = info['Pozos']
     inc = mapa_inc.get(pozo.replace('-', ''), "Sin incidencia")
     
+    # Datos completos mapeados
     fila = {
         "Pozo": pozo, "Fecha": row['FECHA'].strftime('%d/%m/%y'), "Hora": row['FECHA'].strftime('%H:%M:%S'),
         "Incidencia": inc,
