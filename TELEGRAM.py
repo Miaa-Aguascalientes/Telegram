@@ -31,10 +31,11 @@ try:
     df_inc = pd.read_sql(query_inc, ENGINE_SCADA)
     df_inc['KEY'] = df_inc['NUM_POZO'].astype(str).str.replace(r'[- ]', '', regex=True)
     mapa_inc = dict(zip(df_inc['KEY'], df_inc['DIAGNOSTICO_FALLA']))
-except:
+except Exception as e:
+    st.error(f"Error al cargar incidencias: {e}")
     mapa_inc = {}
 
-# Carga de Datos SCADA
+# Carga de SCADA
 tags = "', '".join(df_dic['bomba'].tolist())
 query = f"""
 SELECT r.NAME, h.VALUE, h.FECHA 
@@ -60,21 +61,19 @@ for _, row in df.iterrows():
     pozo_key = str(info['Pozos']).replace('-', '').replace(' ', '')
     inc = mapa_inc.get(pozo_key, "Sin incidencia")
     
+    def get_val(c): return mapa_aux.get(str(info.get(c)))
+    
+    # Obtenemos valores con manejo de nulos (default 0)
     val_nivel = float(mapa_aux.get(info['nivel_tanque'], 0) or 0)
     val_n_arr = float(mapa_aux.get(info['nivel_arranque_tq'], 0) or 0)
     val_n_par = float(mapa_aux.get(info['nivel_paro_tq'], 0) or 0)
     
-    # NUEVA LÓGICA: 
-    # Si no hay incidencia Y los niveles son 0, omitimos el pozo.
-    if inc == "Sin incidencia" and val_n_arr == 0 and val_n_par == 0:
-        continue
-    
     if row['VALUE'] == 0:
+        # LÓGICA DE ESTATUS CORREGIDA:
+        # Si no hay niveles (todos son 0), no puede ser Normal.
         if inc != "Sin incidencia":
             estatus = "⚠️ Parado por incidencia"
-        elif val_n_arr == 0 and val_n_par == 0:
-            estatus = "❌ Desconocida"
-        elif val_nivel >= val_n_arr or (val_n_par > val_nivel > val_n_arr):
+        elif (val_nivel > 0 or val_n_arr > 0 or val_n_par > 0) and (val_nivel >= val_n_arr or (val_n_par > val_nivel > val_n_arr)):
             estatus = "✅ Normal"
         else:
             estatus = "❌ Desconocida"
@@ -84,20 +83,21 @@ for _, row in df.iterrows():
             "Fecha": row['FECHA'].strftime('%d/%m/%y'), 
             "Hora": row['FECHA'].strftime('%H:%M:%S'),
             "Incidencia": inc,
-            "H_paro": convertir_a_hora(mapa_aux.get(str(info['H_paro']))),
-            "H_arranque": convertir_a_hora(mapa_aux.get(str(info['H_arranque']))),
+            "H_paro": convertir_a_hora(get_val('H_paro')),
+            "H_arranque": convertir_a_hora(get_val('H_arranque')),
             "Nivel": f"{val_nivel:.2f}",
             "Niv_Arr": f"{val_n_arr:.2f}",
             "Niv_Par": f"{val_n_par:.2f}",
             "Estatus_Paro": estatus,
-            "V_L1": int(float(mapa_aux.get(str(info['voltaje_L1']), 0) or 0)),
-            "V_L2": int(float(mapa_aux.get(str(info['voltaje_L2']), 0) or 0)),
-            "V_L3": int(float(mapa_aux.get(str(info['voltaje_L3']), 0) or 0))
+            "V_L1": int(float(get_val('voltaje_L1') or 0)),
+            "V_L2": int(float(get_val('voltaje_L2') or 0)),
+            "V_L3": int(float(get_val('voltaje_L3') or 0))
         })
 
 # --- VISUALIZACIÓN ---
 if lista_apg:
     df_final = pd.DataFrame(lista_apg)
+    
     def color_row(val):
         v = str(val)
         if 'Parado por incidencia' in v: return 'background-color: #FFD700; color: black'
@@ -107,4 +107,4 @@ if lista_apg:
 
     st.dataframe(df_final.style.map(color_row, subset=['Estatus_Paro']), use_container_width=True)
 else:
-    st.info("No hay pozos apagados que mostrar.")
+    st.info("No hay pozos apagados.")
