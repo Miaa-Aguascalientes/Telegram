@@ -64,19 +64,21 @@ for _, row in df.iterrows():
     def get_val(c): return mapa_aux.get(str(info.get(c)))
     
     # Obtenemos valores con manejo de nulos (default 0)
-    val_nivel = float(mapa_aux.get(info['nivel_tanque'], 0) or 0)
-    val_n_arr = float(mapa_aux.get(info['nivel_arranque_tq'], 0) or 0)
-    val_n_par = float(mapa_aux.get(info['nivel_paro_tq'], 0) or 0)
-    
-    def format_val(v):
-        return f"{v:.2f}" if v > 0 else ""
+    nv = float(val_nivel or 0)
+    arr = float(val_n_arr or 0)
+    par = float(val_n_par or 0)
 
     if row['VALUE'] == 0:
-        # Lógica de estatus...
+        # 1. Prioridad: Incidencia registrada
         if inc != "Sin incidencia":
             estatus = "⚠️ Parado por incidencia"
-        elif (val_nivel > 0 or val_n_arr > 0 or val_n_par > 0) and (val_nivel >= val_n_arr or (val_n_par > val_nivel > val_n_arr)):
-            estatus = "✅ Normal"
+        # 2. Si no hay incidencia, verificamos si existe configuración de niveles (arr > 0 y par > 0)
+        elif arr > 0 and par > 0:
+            if nv >= arr or (par > nv > arr):
+                estatus = "✅ Normal"
+            else:
+                estatus = "❌ Desconocida"
+        # 3. Si no hay niveles y tampoco incidencia, es Desconocida
         else:
             estatus = "❌ Desconocida"
         
