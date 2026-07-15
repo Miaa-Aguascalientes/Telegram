@@ -6,39 +6,26 @@ import time as t
 
 st.set_page_config(layout="wide", page_title="Sistema de monitoreo", page_icon="https://www.miaa.mx/favicon.ico")
 
-# --- CSS DE DISEÑO: ETIQUETAS MÁS GRANDES, VALORES COMPACTOS ---
+# --- CSS DE DISEÑO ---
 st.write("""
 <style>
     #MainMenu, header {visibility: hidden;}
     .block-container {padding-top: 0.2rem !important; padding-bottom: 0rem !important;}
     .custom-title {color: #00E5FF !important; font-size: 2rem; font-weight: bold; margin-bottom: 5px; text-align: center;}
     
-    /* Estilo de indicadores con degradado y borde azul */
     .dashboard-card {
         background: linear-gradient(135deg, #1e2630 0%, #0e1117 100%);
-        border: 2px solid #003366; /* Azul oscuro */
+        border: 2px solid #003366; 
         border-radius: 8px; 
-        padding: 6px 12px !important; 
+        padding: 4px 8px !important; 
         text-align: center; 
         margin: 2px !important;
         display: flex;
         justify-content: space-between;
         align-items: center;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.3);
     }
-    
-    .card-label {
-        color: #ffffff; 
-        font-size: 0.85rem !important; 
-        font-weight: 500; 
-        margin: 0 !important;
-    }
-    
-    .card-value {
-        font-size: 1rem !important; 
-        font-weight: bold; 
-        margin-left: 10px;
-    }
+    .card-label {color: #ffffff; font-size: 0.85rem !important; font-weight: 500; margin: 0 !important;}
+    .card-value {font-size: 1rem !important; font-weight: bold; margin-left: 10px;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -73,7 +60,6 @@ with col_h2:
 
 placeholder = st.empty()
 
-# --- BUCLE DE ACTUALIZACIÓN ---
 while True:
     with placeholder.container():
         df_dic = pd.read_sql("SELECT * FROM Diccionario_de_pozos WHERE bomba != 'Sin telemetria'", ENGINE_DIC)
@@ -115,28 +101,29 @@ while True:
                 "TS": row['FECHA']
             }
 
-        if row['VALUE'] == 0:
-            # Lógica corregida: si hay incidencia, muestra "Parado por incidencia"
-            if inc != "Sin incidencia":
-                estatus = "⚠️ Parado por incidencia"
+            if row['VALUE'] == 0:
+                # Estatus corregido
+                estatus = "⚠️ Parado por incidencia" if inc != "Sin incidencia" else ("✅ Normal" if (float(mapa_aux.get(str(info['nivel_arranque_tq']), 0) or 0) > 0) else "❌ Desconocida")
+                data_row["Estatus_Paro"] = estatus
+                lista_apg.append(data_row)
             else:
-                # Si no hay incidencia, mantiene la lógica de "Normal" o "Desconocida"
-                estatus = "✅ Normal" if (float(mapa_aux.get(str(info['nivel_arranque_tq']), 0) or 0) > 0) else "❌ Desconocida"
-            
-            data_row["Estatus_Paro"] = estatus
-            data_row["TS"] = row['FECHA']
-            lista_apg.append(data_row)
-        else:
-            lista_enc.append(data_row)
+                lista_enc.append(data_row)
 
-        df_final = pd.DataFrame(lista_apg).sort_values(by='TS', ascending=False) if lista_apg else pd.DataFrame()
-        df_enc_full = pd.DataFrame(lista_enc).sort_values(by='TS', ascending=False) if lista_enc else pd.DataFrame()
+        df_final = pd.DataFrame(lista_apg)
+        df_enc_full = pd.DataFrame(lista_enc)
         
+        # Validación para evitar KeyError en los indicadores
         cols_ind = st.columns(4)
         with cols_ind[0]: render_card("Total Apagados", len(df_final), "#FFFFFF", "🔴")
-        with cols_ind[1]: render_card("Estatus Normal", len(df_final[df_final['Estatus_Paro'].str.contains('✅', na=False)]), "#00FF00", "✅")
-        with cols_ind[2]: render_card("Por Incidencia", len(df_final[df_final['Estatus_Paro'].str.contains('⚠️', na=False)]), "#FFD700", "⚠️")
-        with cols_ind[3]: render_card("Desconocida", len(df_final[df_final['Estatus_Paro'].str.contains('❌', na=False)]), "#FF0000", "❌")
+        
+        # Verificamos si existe la columna antes de filtrar
+        if not df_final.empty:
+            with cols_ind[1]: render_card("Estatus Normal", len(df_final[df_final['Estatus_Paro'].str.contains('✅', na=False)]), "#00FF00", "✅")
+            with cols_ind[2]: render_card("Por Incidencia", len(df_final[df_final['Estatus_Paro'].str.contains('⚠️', na=False)]), "#FFD700", "⚠️")
+            with cols_ind[3]: render_card("Desconocida", len(df_final[df_final['Estatus_Paro'].str.contains('❌', na=False)]), "#FF0000", "❌")
+        else:
+            for c in cols_ind[1:]:
+                with c: render_card("-", 0, "#888888", "⚪")
         
         st.markdown("<hr style='margin: 10px 0; border: 1px solid #00E5FF;'>", unsafe_allow_html=True)
         
