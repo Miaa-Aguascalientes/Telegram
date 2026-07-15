@@ -10,11 +10,12 @@ st.markdown("""
     <style>
     #MainMenu, header {visibility: hidden;}
     .block-container {padding-top: 0.5rem !important; padding-bottom: 0rem !important;}
+    
     .custom-title {
-        color: #007BFF; /* Azul estándar brillante */
+        color: #00E5FF !important; /* Azul exacto y definido */
         font-size: 3.5rem;
         font-weight: bold;
-        text-shadow: 0px 0px 8px #007BFF;
+        text-shadow: none !important; /* Eliminamos el brillo blanco */
         margin-top: -10px;
     }
     .logo-container {margin-top: -10px;}
