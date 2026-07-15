@@ -6,16 +6,17 @@ import time as t
 
 st.set_page_config(layout="wide", page_title="Sistema de monitoreo", page_icon="https://www.miaa.mx/favicon.ico")
 
-# --- CSS DE DISEÑO ---
+# --- CSS DE DISEÑO COMPACTO ---
 st.write("""
 <style>
     #MainMenu, header {visibility: hidden;}
     .block-container {padding-top: 0.5rem !important; padding-bottom: 0rem !important;}
-    .custom-title {color: #00E5FF !important; font-size: 3.5rem; font-weight: bold; text-shadow: none !important; margin: 0; text-align: center;}
+    .custom-title {color: #00E5FF !important; font-size: 2.5rem; font-weight: bold; margin-bottom: 10px; text-align: center;}
     .logo-container {display: flex; justify-content: center;}
-    .dashboard-card {background-color: #0e1117; border: 1px solid #262730; border-radius: 10px; padding: 15px; text-align: center; margin: 5px;}
-    .card-label {color: #ffffff; font-size: 0.9rem; margin-bottom: 10px;}
-    .card-value {font-size: 1.8rem; font-weight: bold;}
+    /* Tarjetas más compactas */
+    .dashboard-card {background-color: #0e1117; border: 1px solid #262730; border-radius: 8px; padding: 8px 10px; text-align: center; margin: 2px;}
+    .card-label {color: #ffffff; font-size: 0.75rem; margin-bottom: 4px;}
+    .card-value {font-size: 1.3rem; font-weight: bold;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -42,12 +43,10 @@ def convertir_a_hora(valor):
     except: return time(0, 0)
 
 # Cabecera
-col1, col2 = st.columns([1, 10])
-with col1:
-    st.markdown('<div class="logo-container">', unsafe_allow_html=True)
-    st.image("https://raw.githubusercontent.com/Miaa-Aguascalientes/Logos/38504978c8f77a4dac38ad476f74dbdee6af2cad/LogoMIAA.svg", width=200)
-    st.markdown('</div>', unsafe_allow_html=True)
-with col2:
+col_h1, col_h2 = st.columns([1, 10])
+with col_h1:
+    st.image("https://raw.githubusercontent.com/Miaa-Aguascalientes/Logos/38504978c8f77a4dac38ad476f74dbdee6af2cad/LogoMIAA.svg", width=150)
+with col_h2:
     st.markdown('<h1 class="custom-title">Sistema de Monitoreo</h1>', unsafe_allow_html=True)
 
 placeholder = st.empty()
@@ -91,7 +90,7 @@ while True:
                 "V_L1": int(float(mapa_aux.get(str(info['voltaje_L1']), 0) or 0)), 
                 "V_L2": int(float(mapa_aux.get(str(info['voltaje_L2']), 0) or 0)), 
                 "V_L3": int(float(mapa_aux.get(str(info['voltaje_L3']), 0) or 0)),
-                "TS": row['FECHA'] # Mantenemos TS para ordenar
+                "TS": row['FECHA']
             }
 
             if row['VALUE'] == 0:
@@ -104,13 +103,14 @@ while True:
         df_final = pd.DataFrame(lista_apg).sort_values(by='TS', ascending=False) if lista_apg else pd.DataFrame()
         df_enc_full = pd.DataFrame(lista_enc).sort_values(by='TS', ascending=False) if lista_enc else pd.DataFrame()
         
-        c1, c2, c3, c4 = st.columns(4)
-        with c1: render_card("Total Apagados", len(df_final), "#FFFFFF", "🔴")
-        with c2: render_card("Estatus Normal", len(df_final[df_final['Estatus_Paro'].str.contains('✅', na=False)]), "#00FF00", "✅")
-        with c3: render_card("Por Incidencia", len(df_final[df_final['Estatus_Paro'].str.contains('⚠️', na=False)]), "#FFD700", "⚠️")
-        with c4: render_card("Desconocida", len(df_final[df_final['Estatus_Paro'].str.contains('❌', na=False)]), "#FF0000", "❌")
+        # Indicadores compactos
+        cols_ind = st.columns(4)
+        with cols_ind[0]: render_card("Total Apagados", len(df_final), "#FFFFFF", "🔴")
+        with cols_ind[1]: render_card("Estatus Normal", len(df_final[df_final['Estatus_Paro'].str.contains('✅', na=False)]), "#00FF00", "✅")
+        with cols_ind[2]: render_card("Por Incidencia", len(df_final[df_final['Estatus_Paro'].str.contains('⚠️', na=False)]), "#FFD700", "⚠️")
+        with cols_ind[3]: render_card("Desconocida", len(df_final[df_final['Estatus_Paro'].str.contains('❌', na=False)]), "#FF0000", "❌")
         
-        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown("<hr style='margin: 10px 0;'>", unsafe_allow_html=True)
         
         col_izq, col_der = st.columns([0.65, 0.35])
         
