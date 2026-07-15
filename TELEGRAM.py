@@ -9,6 +9,20 @@ st.set_page_config(
     page_icon="https://www.miaa.mx/favicon.ico"
 )
 
+# --- CSS PARA OCULTAR MENÚ Y SUBIR LOGO ---
+st.markdown("""
+    <style>
+    /* Oculta el menú superior derecho de Streamlit */
+    #MainMenu {visibility: hidden;}
+    header {visibility: hidden;}
+    
+    /* Ajusta el margen superior para subir el logo */
+    .logo-container {
+        margin-top: -80px; 
+    }
+    </style>
+""", unsafe_allow_html=True)
+
 # --- CONEXIÓN ---
 @st.cache_resource
 def get_engines():
@@ -27,7 +41,9 @@ def convertir_a_hora(valor):
 # --- CABECERA: LOGO A LA IZQUIERDA ---
 col1, col2 = st.columns([1, 6])
 with col1:
+    st.markdown('<div class="logo-container">', unsafe_allow_html=True)
     st.image("https://raw.githubusercontent.com/Miaa-Aguascalientes/Logos/38504978c8f77a4dac38ad476f74dbdee6af2cad/LogoMIAA.svg", width=120)
+    st.markdown('</div>', unsafe_allow_html=True)
 with col2:
     st.title("Sistema de Monitoreo MIAA 24/7")
 
