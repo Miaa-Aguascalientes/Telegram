@@ -5,23 +5,28 @@ from datetime import time
 
 st.set_page_config(layout="wide", page_title="Sistema MIAA 24/7", page_icon="https://www.miaa.mx/favicon.ico")
 
-# --- CSS: Color AZUL y Centrado ---
+# --- CSS DEFINITIVO: AZUL EXACTO Y ESTRUCTURA ORIGINAL ---
 st.markdown("""
     <style>
     #MainMenu, header {visibility: hidden;}
     .block-container {padding-top: 0.5rem !important; padding-bottom: 0rem !important;}
     
+    /* Título azul exacto sin brillo blanco */
     .custom-title {
         color: #00E5FF !important; 
         font-size: 3.5rem;
         font-weight: bold;
         text-shadow: none !important;
         margin: 0;
-        text-align: center; /* Centrado del texto */
+        vertical-align: middle;
     }
-    .logo-container {
+    
+    /* Asegura alineación vertical entre logo y título */
+    .header-container {
         display: flex;
-        justify-content: center; /* Centrado del logo */
+        align-items: center;
+        justify-content: flex-start;
+        gap: 20px;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -41,15 +46,14 @@ def convertir_a_hora(valor):
         return time(int((m // 60) % 24), int(m % 60))
     except: return time(0, 0)
 
-# --- CABECERA CENTRADA ---
-col1, col2, col3 = st.columns([1, 4, 1])
-with col2:
-    st.markdown('<div class="logo-container">', unsafe_allow_html=True)
-    st.image("https://raw.githubusercontent.com/Miaa-Aguascalientes/Logos/38504978c8f77a4dac38ad476f74dbdee6af2cad/LogoMIAA.svg", width=150)
-    st.markdown('</div>', unsafe_allow_html=True)
-    st.markdown('<h1 class="custom-title">Sistema de Monitoreo MIAA 24/7</h1>', unsafe_allow_html=True)
+# --- CABECERA: ESTRUCTURA ORIGINAL RECUPERADA ---
+# Usamos un contenedor flexible para alinear logo (izq) y título (der)
+st.markdown('<div class="header-container">', unsafe_allow_html=True)
+st.image("https://raw.githubusercontent.com/Miaa-Aguascalientes/Logos/38504978c8f77a4dac38ad476f74dbdee6af2cad/LogoMIAA.svg", width=150)
+st.markdown('<h1 class="custom-title">Sistema de Monitoreo MIAA 24/7</h1>', unsafe_allow_html=True)
+st.markdown('</div>', unsafe_allow_html=True)
 
-# --- LÓGICA ORIGINAL ---
+# --- LÓGICA (Mantenida sin cambios) ---
 df_dic = pd.read_sql("SELECT * FROM Diccionario_de_pozos WHERE bomba != 'Sin telemetria'", ENGINE_DIC)
 try:
     query_inc = "SELECT NUM_POZO, DIAGNOSTICO_FALLA FROM vw_incidencias_en_pozos WHERE ESTATUS != 'Cerrada'"
@@ -81,7 +85,6 @@ for _, row in df.iterrows():
     
     if row['VALUE'] == 0:
         estatus = f"⚠️ {inc}" if inc != "Sin incidencia" else ("✅ Normal" if (val_n_arr > 0 and val_n_par > 0 and (val_nivel >= val_n_arr or (val_n_par > val_nivel > val_n_arr))) else "❌ Desconocida")
-        # --- AQUÍ MOVIMOS 'Pozo' AL PRINCIPIO DEL DICCIONARIO ---
         lista_apg.append({
             "Pozo": info['Pozos'],
             "Estatus_Paro": estatus, 
