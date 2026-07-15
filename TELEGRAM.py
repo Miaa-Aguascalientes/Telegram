@@ -26,9 +26,10 @@ st.title("Sistema de Monitoreo MIAA 24/7")
 # 1. Carga del Diccionario
 df_dic = pd.read_sql("SELECT * FROM Diccionario_de_pozos WHERE bomba != 'Sin telemetria'", ENGINE_DIC)
 
-# 2. Carga de Incidencias (Con manejo de errores para que no falle el sistema)
+# 2. Carga de Incidencias (CORREGIDO: Eliminé FECHA_INICIO del ORDER BY)
 try:
-    query_inc = "SELECT NUM_POZO, DIAGNOSTICO_FALLA FROM vw_incidencias_en_pozos WHERE ESTATUS != 'Cerrada' ORDER BY FECHA_INICIO DESC"
+    # Si la vista no tiene FECHA_INICIO, ordenamos por otra columna o simplemente quitamos el ORDER BY
+    query_inc = "SELECT NUM_POZO, DIAGNOSTICO_FALLA FROM vw_incidencias_en_pozos WHERE ESTATUS != 'Cerrada'"
     df_inc = pd.read_sql(query_inc, ENGINE_SCADA)
     df_inc['KEY'] = df_inc['NUM_POZO'].astype(str).str.replace(r'[- ]', '', regex=True)
     mapa_inc = dict(zip(df_inc['KEY'], df_inc['DIAGNOSTICO_FALLA']))
@@ -36,7 +37,7 @@ except Exception as e:
     st.error(f"Error al cargar la tabla de incidencias: {e}")
     mapa_inc = {}
 
-# 3. Carga de Datos SCADA (Ordenados por fecha más reciente)
+# 3. Carga de Datos SCADA (Ordenados por fecha)
 tags = "', '".join(df_dic['bomba'].tolist())
 query = f"""
 SELECT r.NAME, h.VALUE, h.FECHA 
@@ -69,8 +70,8 @@ for _, row in df.iterrows():
     val_n_arr = float(mapa_aux.get(info['nivel_arranque_tq'], 0))
     val_n_par = float(mapa_aux.get(info['nivel_paro_tq'], 0))
     
-    # Lógica de Estatus solicitada
     if row['VALUE'] == 0:
+        # Lógica de Estatus
         if inc != "Sin incidencia":
             estatus = "⚠️ Parado por incidencia"
         elif val_n_par > val_nivel > val_n_arr:
