@@ -97,17 +97,18 @@ if lista_apg:
     
     def color_text(row):
         estatus = str(row['Estatus_Paro'])
-        # Colores intensos: Amarillo brillante, Verde neón, Rojo intenso
-        if '⚠️' in estatus: color = '#FFD700' 
-        elif '✅' in estatus: color = '#00FF00' 
-        elif '❌' in estatus: color = '#FF0000' 
+        if '⚠️' in estatus: color = '#FFD700'
+        elif '✅' in estatus: color = '#00FF00'
+        elif '❌' in estatus: color = '#FF0000'
         else: color = 'inherit'
         return [f'color: {color}'] * len(row)
 
+    # height=800 hace la tabla mucho más alta
     st.dataframe(
         df_final.style.apply(color_text, axis=1), 
         use_container_width=True, 
-        hide_index=True
+        hide_index=True,
+        height=800 
     )
 else:
     st.info("No hay pozos apagados.")
