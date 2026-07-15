@@ -25,17 +25,14 @@ st.title("Sistema de Monitoreo MIAA 24/7")
 
 df_dic = pd.read_sql("SELECT * FROM Diccionario_de_pozos WHERE bomba != 'Sin telemetria'", ENGINE_DIC)
 
-# Carga de Incidencias
 try:
     query_inc = "SELECT NUM_POZO, DIAGNOSTICO_FALLA FROM vw_incidencias_en_pozos WHERE ESTATUS != 'Cerrada'"
     df_inc = pd.read_sql(query_inc, ENGINE_SCADA)
     df_inc['KEY'] = df_inc['NUM_POZO'].astype(str).str.replace(r'[- ]', '', regex=True)
     mapa_inc = dict(zip(df_inc['KEY'], df_inc['DIAGNOSTICO_FALLA']))
-except Exception as e:
-    st.error(f"Error al cargar incidencias: {e}")
+except:
     mapa_inc = {}
 
-# Carga de Datos SCADA
 tags = "', '".join(df_dic['bomba'].tolist())
 query = f"""
 SELECT r.NAME, h.VALUE, h.FECHA 
@@ -47,7 +44,6 @@ ORDER BY h.FECHA DESC
 """
 df = pd.read_sql(query, ENGINE_SCADA)
 
-# Carga de Auxiliares
 cols_aux = ['H_arranque', 'H_paro', 'nivel_tanque', 'nivel_arranque_tq', 'nivel_paro_tq', 'voltaje_L1', 'voltaje_L2', 'voltaje_L3']
 tags_aux = [str(t) for col in cols_aux for t in df_dic[col].dropna().unique()]
 query_aux = f"SELECT r.NAME, h.VALUE FROM VfiTagNumHistory_Ultimo h JOIN VfiTagRef r ON h.GATEID = r.GATEID WHERE r.NAME IN ('{"', '".join(tags_aux)}') AND h.FECHA = (SELECT MAX(FECHA) FROM VfiTagNumHistory_Ultimo WHERE GATEID = h.GATEID)"
@@ -69,14 +65,10 @@ for _, row in df.iterrows():
     val_n_par = float(mapa_aux.get(str(info['nivel_paro_tq']), 0) or 0)
     
     if row['VALUE'] == 0:
-        # Lógica de Estatus
         if inc != "Sin incidencia":
             estatus = f"⚠️ {inc}"
         elif val_n_arr > 0 and val_n_par > 0:
-            if val_nivel >= val_n_arr or (val_n_par > val_nivel > val_n_arr):
-                estatus = "✅ Normal"
-            else:
-                estatus = "❌ Desconocida"
+            estatus = "✅ Normal" if (val_nivel >= val_n_arr or (val_n_par > val_nivel > val_n_arr)) else "❌ Desconocida"
         else:
             estatus = "❌ Desconocida"
         
@@ -100,18 +92,15 @@ for _, row in df.iterrows():
 if lista_apg:
     df_final = pd.DataFrame(lista_apg)
     
-    # 1. Establecer el índice como 'Estatus_Paro' para quitar los números 0, 1, 2...
-    df_final.set_index('Estatus_Paro', inplace=True)
-    
-    # 2. Función de estilización
+    # Función de color corregida para no depender del índice
     def color_row(row):
-        # Aplicamos estilo a toda la fila basándonos en el índice
-        estatus = row.name
+        estatus = str(row['Estatus_Paro'])
         if '⚠️' in estatus: return ['background-color: #FFD700; color: black'] * len(row)
         if '✅' in estatus: return ['background-color: #2E7D32; color: white'] * len(row)
         if '❌' in estatus: return ['background-color: #D32F2F; color: white'] * len(row)
         return [''] * len(row)
 
-    st.dataframe(df_final.style.apply(color_row, axis=1), use_container_width=True)
+    # st.dataframe oculta el índice usando hide_index
+    st.dataframe(df_final.style.apply(color_row, axis=1), use_container_width=True, hide_index=True)
 else:
     st.info("No hay pozos apagados.")
