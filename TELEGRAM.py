@@ -12,23 +12,33 @@ st.write("""
     #MainMenu, header {visibility: hidden;}
     .block-container {padding-top: 0.2rem !important; padding-bottom: 0rem !important;}
     .custom-title {color: #00E5FF !important; font-size: 2rem; font-weight: bold; margin-bottom: 5px; text-align: center;}
-    .logo-container {display: flex; justify-content: center;}
     
+    /* Estilo de indicadores con degradado y borde azul */
     .dashboard-card {
-        background-color: #0e1117; 
-        border: 1px solid #262730; 
-        border-radius: 5px; 
-        padding: 4px 8px !important; 
+        background: linear-gradient(135deg, #1e2630 0%, #0e1117 100%);
+        border: 2px solid #003366; /* Azul oscuro */
+        border-radius: 8px; 
+        padding: 6px 12px !important; 
         text-align: center; 
-        margin: 1px !important;
+        margin: 2px !important;
         display: flex;
         justify-content: space-between;
         align-items: center;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.3);
     }
-    /* Etiquetas más grandes */
-    .card-label {color: #ffffff; font-size: 0.85rem !important; font-weight: 500; margin: 0 !important;}
-    /* Valores compactos */
-    .card-value {font-size: 1rem !important; font-weight: bold; margin-left: 10px;}
+    
+    .card-label {
+        color: #ffffff; 
+        font-size: 0.85rem !important; 
+        font-weight: 500; 
+        margin: 0 !important;
+    }
+    
+    .card-value {
+        font-size: 1rem !important; 
+        font-weight: bold; 
+        margin-left: 10px;
+    }
 </style>
 """, unsafe_allow_html=True)
 
