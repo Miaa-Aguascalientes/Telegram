@@ -111,10 +111,10 @@ while True:
                 "Incidencia": inc, 
                 "H_paro": convertir_a_hora(mapa_aux.get(str(info['H_paro']))), 
                 "H_arranque": convertir_a_hora(mapa_aux.get(str(info['H_arranque']))),
-                # Usamos .get(..., 0) para asegurar que siempre pasamos algo a la función
-                "Nivel": format_val(mapa_aux.get(str(info['nivel_tanque']), 0)),
-                "Niv_Arr": format_val(mapa_aux.get(str(info['nivel_arranque_tq']), 0)),
-                "Niv_Par": format_val(mapa_aux.get(str(info['nivel_paro_tq']), 0)),
+                # Aplicamos la función correcta a cada columna
+                "Nivel": format_nivel(mapa_aux.get(str(info['nivel_tanque']), 0)),
+                "Niv_Arr": format_param(mapa_aux.get(str(info['nivel_arranque_tq']), 0)),
+                "Niv_Par": format_param(mapa_aux.get(str(info['nivel_paro_tq']), 0)),
                 "V_L1": int(float(mapa_aux.get(str(info['voltaje_L1']), 0) or 0)), 
                 "V_L2": int(float(mapa_aux.get(str(info['voltaje_L2']), 0) or 0)), 
                 "V_L3": int(float(mapa_aux.get(str(info['voltaje_L3']), 0) or 0)),
