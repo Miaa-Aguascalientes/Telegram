@@ -36,7 +36,7 @@ jobs:
             
             try {
               console.log('Navegando a la App MIAA...');
-              await page.goto('https://sistema-scada.streamlit.app', { 
+              await page.goto('https://telegram-scada.streamlit.app', { 
                 waitUntil: 'networkidle', 
                 timeout: 60000 
               });
