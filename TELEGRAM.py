@@ -145,6 +145,7 @@ while True:
                 
             val_arr = f"{n_arr:.2f}" if n_arr > 0 else ""
             val_par = f"{n_par:.2f}" if n_par > 0 else ""
+            val_tq = f"{n_tq:.2f}" if n_tq > 0 else "Directo a red"
             
             if row['VALUE'] == 0:
                 # ... (lógica de estatus)
@@ -155,9 +156,9 @@ while True:
                     "Fecha": row['FECHA'].date(), 
                     "Hora": row['FECHA'].time(), 
                     "Incidencia": inc,
-                    "Nivel_Tanque": f"{n_tq:.2f}",
-                    "Nivel_Arranque": val_arr, # Usa el valor vacío si es 0
-                    "Nivel_Paro": val_par,     # Usa el valor vacío si es 0
+                    "Nivel_Tanque": val_tq,      # Muestra valor o "Directo a red"
+                    "Nivel_Arranque": val_arr,   # Vacío si es 0
+                    "Nivel_Paro": val_par,       # Vacío si es 0
                     "V_L1": f"{float(v1):.2f}",
                     "V_L2": f"{float(v2):.2f}",
                     "V_L3": f"{float(v3):.2f}", 
