@@ -142,7 +142,8 @@ while True:
                 elif es_periodo_de_paro_programado(h_p, h_a) or (n_tq >= n_par and n_par > 0) or (n_tq >= (n_arr * 0.30) and n_tq < n_par): estatus, razon = "✅ Normal", "Operación normal"
                 elif n_tq < (n_arr * 0.30) and n_arr > 0: estatus, razon = "No arranca con su condición de tanque", "Nivel bajo"
                 else: estatus, razon = "❌ Desconocida", "Estatus desconocido"
-                
+
+                st.toggle("Activar envío de alertas a Telegram", key="alertas_activas") # Botón de control 
                 if inc == "Sin incidencia" and razon != "Operación normal" and (ahora_dt - fecha_bd) > timedelta(minutes=90):
                     if info['Pozos'] not in st.session_state.alertas_enviadas:
                         enviar_alerta(info['Pozos'], f"{n_tq:.2f}", f"{n_arr:.2f}", row['FECHA'].time(), h_p, h_a, razon)
@@ -193,7 +194,7 @@ while True:
             st.subheader("🟢 Pozos Encendidos")
             if not df_enc_full.empty: st.dataframe(df_enc_full, use_container_width=True, hide_index=True)
                 
-        st.toggle("Activar envío de alertas a Telegram", key="alertas_activas") # Botón de control    
+           
         st.subheader("📋 Registro de Alertas")
         st.markdown(f'<div class="log-console">{"<br>".join(reversed(st.session_state.logs))}</div>', unsafe_allow_html=True)
     t.sleep(30)
