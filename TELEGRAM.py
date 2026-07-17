@@ -128,6 +128,10 @@ while True:
             h_a = convertir_a_hora(mapa_aux.get(str(info['H_arranque'])))
             
             es_programado = es_periodo_de_paro_programado(h_p, h_a)
+
+            v1 = mapa_aux.get(str(info['voltaje_L1']), 0)
+            v2 = mapa_aux.get(str(info['voltaje_L2']), 0)
+            v3 = mapa_aux.get(str(info['voltaje_L3']), 0)
             
             if row['VALUE'] == 0:
                 if inc != "Sin incidencia": estatus, razon = "⚠️ Parado por incidencia", inc
@@ -140,7 +144,19 @@ while True:
                         enviar_alerta(info['Pozos'], f"{n_tq:.2f}", f"{n_arr:.2f}", row['FECHA'].time(), h_p, h_a, razon)
                         st.session_state.alertas_enviadas[info['Pozos']] = ahora_dt
                 
-                lista_apg.append({"Pozo": info['Pozos'], "Estatus_Paro": estatus, "Fecha": row['FECHA'].date(), "Hora": row['FECHA'].time(), "Incidencia": inc, "H_paro": h_p, "H_arranque": h_a, "Nivel": f"{n_tq:.2f}", "TS": row['FECHA']})
+                lista_apg.append({
+                    "Pozo": info['Pozos'], 
+                    "Estatus_Paro": estatus, 
+                    "Fecha": row['FECHA'].date(), 
+                    "Hora": row['FECHA'].time(), 
+                    "Incidencia": inc, 
+                    "Nivel_Arranque": f"{n_arr:.2f}",
+                    "Nivel_Paro": f"{n_par:.2f}",
+                    "V_L1": f"{float(v1):.2f}",
+                    "V_L2": f"{float(v2):.2f}",
+                    "V_L3": f"{float(v3):.2f}",
+                    "TS": row['FECHA']
+                })
             else:
                 if info['Pozos'] in st.session_state.alertas_enviadas: del st.session_state.alertas_enviadas[info['Pozos']]
                 lista_enc.append({"Pozo": info['Pozos'], "Fecha": row['FECHA'].date(), "Hora": row['FECHA'].time()})
@@ -165,6 +181,14 @@ while True:
                 df_mostrar = df_final.drop(columns=['TS']).copy()
                 df_mostrar['Fecha'] = df_mostrar['Fecha'].apply(lambda x: x.strftime('%d/%m/%y'))
                 df_mostrar['Hora'] = df_mostrar['Hora'].apply(lambda x: x.strftime('%H:%M:%S'))
+                
+                # Definir formato para centrar voltajes
+                st.dataframe(
+                    df_mostrar.style.apply(color_fila, axis=1)
+                    .set_properties(**{'text-align': 'center'}, subset=['V_L1', 'V_L2', 'V_L3']), 
+                    use_container_width=True, 
+                    hide_index=True
+                )
                 
                 def color_fila(row):
                     e = str(row['Estatus_Paro'])
