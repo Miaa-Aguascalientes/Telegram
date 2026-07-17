@@ -92,7 +92,7 @@ col_h1, col_h2 = st.columns([1, 10])
 with col_h1: st.image("https://raw.githubusercontent.com/Miaa-Aguascalientes/Logos/38504978c8f77a4dac38ad476f74dbdee6af2cad/LogoMIAA.svg", width=150)
 with col_h2: st.markdown('<h1 class="custom-title">Sistema de Monitoreo</h1>', unsafe_allow_html=True)
 
-st.toggle("Activar envío de alertas a Telegram", key="alertas_activas") # Botón de control 
+
 
 placeholder = st.empty()
 
@@ -144,10 +144,14 @@ while True:
                 else: estatus, razon = "❌ Desconocida", "Estatus desconocido"
 
                 
-                if inc == "Sin incidencia" and razon != "Operación normal" and (ahora_dt - fecha_bd) > timedelta(minutes=90):
-                    if info['Pozos'] not in st.session_state.alertas_enviadas:
-                        enviar_alerta(info['Pozos'], f"{n_tq:.2f}", f"{n_arr:.2f}", row['FECHA'].time(), h_p, h_a, razon)
-                        st.session_state.alertas_enviadas[info['Pozos']] = ahora_dt
+                if (inc == "Sin incidencia" and 
+                    razon != "Operación normal" and 
+                    (ahora_dt - fecha_bd) > timedelta(minutes=90) and 
+                    st.session_state.alertas_activas and 
+                    info['Pozos'] not in st.session_state.alertas_enviadas):
+                    
+                    enviar_alerta(info['Pozos'], f"{n_tq:.2f}", f"{n_arr:.2f}", row['FECHA'].time(), h_p, h_a, razon)
+                    st.session_state.alertas_enviadas[info['Pozos']] = ahora_dt
                 
                 lista_apg.append({
                     "Pozo": info['Pozos'], "Estatus_Paro": estatus, "Fecha": row['FECHA'].date(), "Hora": row['FECHA'].time(), 
