@@ -144,9 +144,18 @@ while True:
                         st.session_state.alertas_enviadas[info['Pozos']] = ahora_dt
                 
                 lista_apg.append({
-                    "Pozo": info['Pozos'], "Estatus_Paro": estatus, "Fecha": row['FECHA'].date(), "Hora": row['FECHA'].time(), 
-                    "Incidencia": inc, "Nivel_Arranque": f"{n_arr:.2f}", "Nivel_Paro": f"{n_par:.2f}", 
-                    "V_L1": f"{float(v1):.2f}", "V_L2": f"{float(v2):.2f}", "V_L3": f"{float(v3):.2f}", "TS": row['FECHA']
+                    "Pozo": info['Pozos'], 
+                    "Estatus_Paro": estatus, 
+                    "Fecha": row['FECHA'].date(), 
+                    "Hora": row['FECHA'].time(), 
+                    "Incidencia": inc,
+                    "Nivel_Tanque": f"{n_tq:.2f}", # Columna restaurada
+                    "Nivel_Arranque": f"{n_arr:.2f}",
+                    "Nivel_Paro": f"{n_par:.2f}", 
+                    "V_L1": f"{float(v1):.2f}",
+                    "V_L2": f"{float(v2):.2f}",
+                    "V_L3": f"{float(v3):.2f}", 
+                    "TS": row['FECHA']
                 })
             else:
                 if info['Pozos'] in st.session_state.alertas_enviadas: del st.session_state.alertas_enviadas[info['Pozos']]
@@ -179,7 +188,7 @@ while True:
                 
                 st.dataframe(
                     df_mostrar.style.apply(color_fila, axis=1)
-                    .set_properties(**{'text-align': 'center'}, subset=['V_L1', 'V_L2', 'V_L3']), 
+                    .set_properties(**{'text-align': 'center'}, subset=['Nivel_Tanque', 'Nivel_Arranque', 'Nivel_Paro', 'V_L1', 'V_L2', 'V_L3']), 
                     use_container_width=True, hide_index=True
                 )
         
