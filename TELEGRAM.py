@@ -16,6 +16,7 @@ if 'alertas_enviadas' not in st.session_state:
 if 'logs' not in st.session_state:
     st.session_state.logs = []
 
+zona_mx = ZoneInfo("America/Mexico_City")
 # --- FUNCIONES DE TELEGRAM ---
 def es_periodo_de_paro_programado(t_par, t_arr):
     if t_par == time(0, 0) and t_arr == time(0, 0): return False
@@ -132,6 +133,8 @@ while True:
             v3 = mapa_aux.get(str(info['voltaje_L3']), 0)
             
             es_programado = es_periodo_de_paro_programado(h_p, h_a)
+
+            fecha_bd = row['FECHA'].tz_localize(None).replace(tzinfo=zona_mx) if row['FECHA'].tzinfo is None else row['FECHA'].astimezone(zona_mx)
             
             if row['VALUE'] == 0:
                 if inc != "Sin incidencia": estatus, razon = "⚠️ Parado por incidencia", inc
