@@ -138,10 +138,15 @@ while True:
             fecha_bd = row['FECHA'].tz_localize(None).replace(tzinfo=zona_mx) if row['FECHA'].tzinfo is None else row['FECHA'].astimezone(zona_mx)
 
             if row['VALUE'] == 0:
-                if inc != "Sin incidencia": estatus, razon = "⚠️ Parado por incidencia", inc
-                elif es_periodo_de_paro_programado(h_p, h_a) or (n_tq >= n_par and n_par > 0) or (n_tq >= (n_arr * 0.30) and n_tq < n_par): estatus, razon = "✅ Normal", "Operación normal"
-                elif n_tq < (n_arr * 0.30) and n_arr > 0: estatus, razon = "No arranca con su condición de tanque", "Nivel bajo"
-                else: estatus, razon = "❌ Desconocida", "Estatus desconocido"
+                # 1. Primero calculamos el estatus y la razón
+                if inc != "Sin incidencia": 
+                    estatus, razon = "⚠️ Parado por incidencia", inc
+                elif es_periodo_de_paro_programado(h_p, h_a) or (n_tq >= n_par and n_par > 0) or (n_tq >= (n_arr * 0.30) and n_tq < n_par): 
+                    estatus, razon = "✅ Normal", "Operación normal"
+                elif n_tq < (n_arr * 0.30) and n_arr > 0: 
+                    estatus, razon = "No arranca con su condición de tanque", "Nivel bajo"
+                else: 
+                    estatus, razon = "❌ Desconocida", "Estatus desconocido"
 
                 
                 if (inc == "Sin incidencia" and 
