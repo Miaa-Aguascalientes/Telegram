@@ -35,7 +35,7 @@ def enviar_alerta(pozo, nivel, nivel_arr, hora, h_paro, h_arranque, razon):
     threading.Thread(target=send, daemon=True).start()
     st.session_state.logs.append(f"[{datetime.now(zona_mx).strftime('%H:%M:%S')}] Alerta enviada: {pozo} - {razon}")
 
-# --- CSS ---
+# --- CSS Y MOTORES ---
 st.write("""<style>#MainMenu, header {visibility: hidden;} .block-container {padding-top: 0rem !important; padding-bottom: 0rem !important;} .custom-title {color: #00E5FF !important; font-size: 2rem; font-weight: bold; margin-bottom: 0px; text-align: center; margin-top: 0px;} .log-console {background-color: #0e1117; color: #00FF00; font-family: monospace; padding: 10px; border: 1px solid #003366; border-radius: 5px; height: 150px; overflow-y: scroll; font-size: 0.85rem;}</style>""", unsafe_allow_html=True)
 
 @st.cache_resource
@@ -79,16 +79,14 @@ while True:
             fecha_bd = row['FECHA'].tz_localize(None).replace(tzinfo=zona_mx) if row['FECHA'].tzinfo is None else row['FECHA'].astimezone(zona_mx)
             
             if row['VALUE'] == 0:
-                estatus, razon = ("⚠️ Parado por incidencia", inc) if inc != "Sin incidencia" else (("✅ Normal", "Operación normal") if (es_periodo_de_paro_programado(convertir_a_hora(mapa_aux.get(str(info['H_paro']))), convertir_a_hora(mapa_aux.get(str(info['H_arranque'])))) or (n_tq >= n_par and n_par > 0) or (n_tq >= (n_arr * 0.30) and n_tq < n_par)) else (("No arranca con su condición de tanque", "Nivel bajo") if n_tq < (n_arr * 0.30) and n_arr > 0 else ("❌ Desconocida", "Estatus desconocido")))
+                # LÓGICA DE UMBRAL: Se activa si el nivel cae por debajo del 50% del nivel de arranque
+                umbral_alerta = n_arr * 0.50
+                if inc != "Sin incidencia": estatus, razon = "⚠️ Parado por incidencia", inc
+                elif es_periodo_de_paro_programado(convertir_a_hora(mapa_aux.get(str(info['H_paro']))), convertir_a_hora(mapa_aux.get(str(info['H_arranque'])))) or (n_tq >= n_par and n_par > 0) or (n_tq >= umbral_alerta and n_tq < n_par): estatus, razon = "✅ Normal", "Operación normal"
+                elif n_tq < umbral_alerta and n_arr > 0: estatus, razon = "No arranca con su condición de tanque", "Nivel bajo"
+                else: estatus, razon = "❌ Desconocida", "Estatus desconocido"
                 
-                # REGLAS: Alerta solo hoy, después de 1 hora, si el toggle está activo
-                if (st.session_state.alertas_activas and 
-                    fecha_bd.date() == ahora_actual.date() and 
-                    (ahora_actual - fecha_bd) >= timedelta(hours=1) and 
-                    inc == "Sin incidencia" and 
-                    razon != "Operación normal" and 
-                    info['Pozos'] not in st.session_state.alertas_enviadas):
-                    
+                if (st.session_state.alertas_activas and fecha_bd.date() == ahora_actual.date() and (ahora_actual - fecha_bd) >= timedelta(hours=1) and inc == "Sin incidencia" and razon != "Operación normal" and info['Pozos'] not in st.session_state.alertas_enviadas):
                     enviar_alerta(info['Pozos'], f"{n_tq:.2f}", f"{n_arr:.2f}", row['FECHA'].time(), convertir_a_hora(mapa_aux.get(str(info['H_paro']))), convertir_a_hora(mapa_aux.get(str(info['H_arranque']))), razon)
                     st.session_state.alertas_enviadas[info['Pozos']] = ahora_actual
                 
