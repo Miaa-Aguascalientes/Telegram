@@ -35,7 +35,7 @@ def enviar_alerta(pozo, nivel, nivel_arr, hora, h_paro, h_arranque, razon):
     threading.Thread(target=send, daemon=True).start()
     st.session_state.logs.append(f"[{datetime.now(zona_mx).strftime('%H:%M:%S')}] Alerta enviada: {pozo} - {razon}")
 
-# --- CSS ---
+# --- CSS Y MOTORES ---
 st.write("""<style>#MainMenu, header {visibility: hidden;} .log-console {background-color: #0e1117; color: #00FF00; font-family: monospace; padding: 10px; border: 1px solid #003366; border-radius: 5px; height: 150px; overflow-y: scroll; font-size: 0.85rem;}</style>""", unsafe_allow_html=True)
 
 @st.cache_resource
@@ -62,7 +62,9 @@ while True:
 
         tags = "', '".join(df_dic['bomba'].tolist())
         df = pd.read_sql(f"SELECT r.NAME, h.VALUE, h.FECHA FROM VfiTagNumHistory_Ultimo h JOIN VfiTagRef r ON h.GATEID = r.GATEID WHERE r.NAME IN ('{tags}') AND h.FECHA = (SELECT MAX(FECHA) FROM VfiTagNumHistory_Ultimo WHERE GATEID = h.GATEID)", ENGINE_SCADA)
-        df_h = pd.read_sql(f"SELECT r.NAME, h.VALUE FROM VfiTagNumHistory_Ultimo h JOIN VfiTagRef r ON h.GATEID = r.GATEID WHERE r.NAME IN ('{"', '".join([str(t) for col in ['H_arranque', 'H_paro', 'nivel_tanque', 'nivel_arranque_tq', 'nivel_paro_tq', 'voltaje_L1', 'voltaje_L2', 'voltaje_L3'] for t in df_dic[col].dropna().unique()])}') AND h.FECHA = (SELECT MAX(FECHA) FROM VfiTagNumHistory_Ultimo WHERE GATEID = h.GATEID)", ENGINE_SCADA)
+        
+        tags_aux = [str(t) for col in ['H_arranque', 'H_paro', 'nivel_tanque', 'nivel_arranque_tq', 'nivel_paro_tq', 'voltaje_L1', 'voltaje_L2', 'voltaje_L3'] for t in df_dic[col].dropna().unique()]
+        df_h = pd.read_sql(f"SELECT r.NAME, h.VALUE FROM VfiTagNumHistory_Ultimo h JOIN VfiTagRef r ON h.GATEID = r.GATEID WHERE r.NAME IN ('{"', '".join(tags_aux)}') AND h.FECHA = (SELECT MAX(FECHA) FROM VfiTagNumHistory_Ultimo WHERE GATEID = h.GATEID)", ENGINE_SCADA)
         mapa_aux = dict(zip(df_h['NAME'].astype(str), df_h['VALUE']))
 
         lista_apg, lista_enc = [], []
@@ -79,7 +81,6 @@ while True:
             if row['VALUE'] == 0:
                 estatus, razon = ("⚠️ Parado por incidencia", inc) if inc != "Sin incidencia" else (("✅ Normal", "Operación normal") if (es_periodo_de_paro_programado(convertir_a_hora(mapa_aux.get(str(info['H_paro']))), convertir_a_hora(mapa_aux.get(str(info['H_arranque'])))) or (n_tq >= n_par and n_par > 0) or (n_tq >= (n_arr * 0.30) and n_tq < n_par)) else (("No arranca con su condición de tanque", "Nivel bajo") if n_tq < (n_arr * 0.30) and n_arr > 0 else ("❌ Desconocida", "Estatus desconocido")))
                 
-                # --- VALIDACIÓN CRÍTICA AQUÍ ---
                 if (st.session_state.alertas_activas and inc == "Sin incidencia" and razon != "Operación normal" and (ahora_dt - fecha_bd) > timedelta(minutes=90) and info['Pozos'] not in st.session_state.alertas_enviadas):
                     enviar_alerta(info['Pozos'], f"{n_tq:.2f}", f"{n_arr:.2f}", row['FECHA'].time(), convertir_a_hora(mapa_aux.get(str(info['H_paro']))), convertir_a_hora(mapa_aux.get(str(info['H_arranque']))), razon)
                     st.session_state.alertas_enviadas[info['Pozos']] = ahora_dt
@@ -92,12 +93,6 @@ while True:
         df_final = pd.DataFrame(lista_apg).sort_values(by='TS', ascending=False) if lista_apg else pd.DataFrame()
         df_enc_full = pd.DataFrame(lista_enc).sort_values(by='Fecha', ascending=False) if lista_enc else pd.DataFrame()
         
-        # Renderizado final
-        st.markdown("<hr>", unsafe_allow_html=True)
-        st.toggle("Activar envío de alertas a Telegram", key="alertas_activas") 
-        st.subheader("📋 Registro de Alertas")
-        st.markdown(f'<div class="log-console">{"<br>".join(reversed(st.session_state.logs))}</div>', unsafe_allow_html=True)
-        
         col_izq, col_der = st.columns([0.65, 0.35])
         with col_izq: 
             st.subheader("🔴 Pozos Apagados")
@@ -105,4 +100,9 @@ while True:
         with col_der: 
             st.subheader("🟢 Pozos Encendidos")
             if not df_enc_full.empty: st.dataframe(df_enc_full, use_container_width=True, hide_index=True)
+            
+        st.markdown("<hr>", unsafe_allow_html=True)
+        st.toggle("Activar envío de alertas a Telegram", key="alertas_activas") 
+        st.subheader("📋 Registro de Alertas")
+        st.markdown(f'<div class="log-console">{"<br>".join(reversed(st.session_state.logs))}</div>', unsafe_allow_html=True)
     t.sleep(30)
