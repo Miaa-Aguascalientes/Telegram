@@ -126,12 +126,11 @@ while True:
             n_par = float(mapa_aux.get(str(info['nivel_paro_tq']), 0) or 0)
             h_p = convertir_a_hora(mapa_aux.get(str(info['H_paro'])))
             h_a = convertir_a_hora(mapa_aux.get(str(info['H_arranque'])))
-            
-            es_programado = es_periodo_de_paro_programado(h_p, h_a)
-
             v1 = mapa_aux.get(str(info['voltaje_L1']), 0)
             v2 = mapa_aux.get(str(info['voltaje_L2']), 0)
             v3 = mapa_aux.get(str(info['voltaje_L3']), 0)
+            
+            es_programado = es_periodo_de_paro_programado(h_p, h_a)
             
             if row['VALUE'] == 0:
                 if inc != "Sin incidencia": estatus, razon = "⚠️ Parado por incidencia", inc
@@ -145,17 +144,9 @@ while True:
                         st.session_state.alertas_enviadas[info['Pozos']] = ahora_dt
                 
                 lista_apg.append({
-                    "Pozo": info['Pozos'], 
-                    "Estatus_Paro": estatus, 
-                    "Fecha": row['FECHA'].date(), 
-                    "Hora": row['FECHA'].time(), 
-                    "Incidencia": inc, 
-                    "Nivel_Arranque": f"{n_arr:.2f}",
-                    "Nivel_Paro": f"{n_par:.2f}",
-                    "V_L1": f"{float(v1):.2f}",
-                    "V_L2": f"{float(v2):.2f}",
-                    "V_L3": f"{float(v3):.2f}",
-                    "TS": row['FECHA']
+                    "Pozo": info['Pozos'], "Estatus_Paro": estatus, "Fecha": row['FECHA'].date(), "Hora": row['FECHA'].time(), 
+                    "Incidencia": inc, "Nivel_Arranque": f"{n_arr:.2f}", "Nivel_Paro": f"{n_par:.2f}", 
+                    "V_L1": f"{float(v1):.2f}", "V_L2": f"{float(v2):.2f}", "V_L3": f"{float(v3):.2f}", "TS": row['FECHA']
                 })
             else:
                 if info['Pozos'] in st.session_state.alertas_enviadas: del st.session_state.alertas_enviadas[info['Pozos']]
@@ -164,7 +155,6 @@ while True:
         df_final = pd.DataFrame(lista_apg).sort_values(by='TS', ascending=False) if lista_apg else pd.DataFrame()
         df_enc_full = pd.DataFrame(lista_enc).sort_values(by='Fecha', ascending=False) if lista_enc else pd.DataFrame()
         
-        # Render indicadores
         cols_ind = st.columns(4)
         with cols_ind[0]: render_card("Total Apagados", len(df_final), "#FFFFFF", "🔴")
         if not df_final.empty:
@@ -182,19 +172,16 @@ while True:
                 df_mostrar['Fecha'] = df_mostrar['Fecha'].apply(lambda x: x.strftime('%d/%m/%y'))
                 df_mostrar['Hora'] = df_mostrar['Hora'].apply(lambda x: x.strftime('%H:%M:%S'))
                 
-                # Definir formato para centrar voltajes
-                st.dataframe(
-                    df_mostrar.style.apply(color_fila, axis=1)
-                    .set_properties(**{'text-align': 'center'}, subset=['V_L1', 'V_L2', 'V_L3']), 
-                    use_container_width=True, 
-                    hide_index=True
-                )
-                
                 def color_fila(row):
                     e = str(row['Estatus_Paro'])
                     c = '#FFD700' if '⚠️' in e else ('#00FF00' if '✅' in e else ('#FF0000' if '❌' in e else 'inherit'))
                     return [f'color: {c}'] * len(row)
-                st.dataframe(df_mostrar.style.apply(color_fila, axis=1), use_container_width=True, hide_index=True)
+                
+                st.dataframe(
+                    df_mostrar.style.apply(color_fila, axis=1)
+                    .set_properties(**{'text-align': 'center'}, subset=['V_L1', 'V_L2', 'V_L3']), 
+                    use_container_width=True, hide_index=True
+                )
         
         with col_der:
             st.subheader("🟢 Pozos Encendidos")
@@ -203,3 +190,4 @@ while True:
         st.subheader("📋 Registro de Alertas")
         st.markdown(f'<div class="log-console">{"\n".join(st.session_state.logs[-15:])}</div>', unsafe_allow_html=True)
     t.sleep(30)
+```[cite: 1]
