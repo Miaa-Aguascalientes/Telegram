@@ -5,6 +5,7 @@ from datetime import time, datetime, timedelta
 import time as t
 import threading
 import requests
+from zoneinfo import ZoneInfo
 
 # Configuración de página
 st.set_page_config(layout="wide", page_title="Sistema de monitoreo", page_icon="https://www.miaa.mx/favicon.ico")
@@ -112,7 +113,7 @@ while True:
         mapa_aux = dict(zip(df_h['NAME'].astype(str), df_h['VALUE']))
 
         lista_apg, lista_enc = [], []
-        ahora_dt = datetime.now()
+        ahora_dt = datetime.now(ZoneInfo("America/Mexico_City"))
 
         for _, row in df.iterrows():
             df_match = df_dic[df_dic['bomba'] == row['NAME']]
