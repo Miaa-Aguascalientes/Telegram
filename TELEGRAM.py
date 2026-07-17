@@ -35,15 +35,8 @@ def enviar_alerta(pozo, nivel, nivel_arr, hora, h_paro, h_arranque, razon):
     threading.Thread(target=send, daemon=True).start()
     st.session_state.logs.append(f"[{datetime.now(zona_mx).strftime('%H:%M:%S')}] Alerta enviada: {pozo} - {razon}")
 
-# --- CSS Y MOTORES ---
-st.write("""
-<style>
-    #MainMenu, header {visibility: hidden;}
-    .block-container {padding-top: 0rem !important; padding-bottom: 0rem !important;}
-    .custom-title {color: #00E5FF !important; font-size: 2rem; font-weight: bold; margin-bottom: 0px; text-align: center; margin-top: 0px;}
-    .log-console {background-color: #0e1117; color: #00FF00; font-family: monospace; padding: 10px; border: 1px solid #003366; border-radius: 5px; height: 150px; overflow-y: scroll; font-size: 0.85rem;}
-</style>
-""", unsafe_allow_html=True)
+# --- CSS ---
+st.write("""<style>#MainMenu, header {visibility: hidden;} .block-container {padding-top: 0rem !important; padding-bottom: 0rem !important;} .custom-title {color: #00E5FF !important; font-size: 2rem; font-weight: bold; margin-bottom: 0px; text-align: center; margin-top: 0px;} .log-console {background-color: #0e1117; color: #00FF00; font-family: monospace; padding: 10px; border: 1px solid #003366; border-radius: 5px; height: 150px; overflow-y: scroll; font-size: 0.85rem;}</style>""", unsafe_allow_html=True)
 
 @st.cache_resource
 def get_engines(): return create_engine(st.secrets["databases"]["url_dic"], pool_pre_ping=True, pool_recycle=1800), create_engine(st.secrets["databases"]["url_scada"], pool_pre_ping=True, pool_recycle=1800)
@@ -53,11 +46,10 @@ def convertir_a_hora(valor):
     try: m = float(valor); return time(int((m // 60) % 24), int(m % 60))
     except: return time(0, 0)
 
-header_col1, header_col2 = st.columns([1, 10])
-with header_col1: 
-    st.image("https://raw.githubusercontent.com/Miaa-Aguascalientes/Logos/38504978c8f77a4dac38ad476f74dbdee6af2cad/LogoMIAA.svg", width=150)
-with header_col2: 
-    st.markdown('<h1 class="custom-title">Sistema de Monitoreo</h1>', unsafe_allow_html=True)
+# --- CABECERA ---
+col_h1, col_h2 = st.columns([1, 10])
+with col_h1: st.image("https://raw.githubusercontent.com/Miaa-Aguascalientes/Logos/38504978c8f77a4dac38ad476f74dbdee6af2cad/LogoMIAA.svg", width=150)
+with col_h2: st.markdown('<h1 class="custom-title">Sistema de Monitoreo</h1>', unsafe_allow_html=True)
 
 placeholder = st.empty()
 while True:
@@ -71,13 +63,12 @@ while True:
 
         tags = "', '".join(df_dic['bomba'].tolist())
         df = pd.read_sql(f"SELECT r.NAME, h.VALUE, h.FECHA FROM VfiTagNumHistory_Ultimo h JOIN VfiTagRef r ON h.GATEID = r.GATEID WHERE r.NAME IN ('{tags}') AND h.FECHA = (SELECT MAX(FECHA) FROM VfiTagNumHistory_Ultimo WHERE GATEID = h.GATEID)", ENGINE_SCADA)
-        
         tags_aux = [str(t) for col in ['H_arranque', 'H_paro', 'nivel_tanque', 'nivel_arranque_tq', 'nivel_paro_tq', 'voltaje_L1', 'voltaje_L2', 'voltaje_L3'] for t in df_dic[col].dropna().unique()]
         df_h = pd.read_sql(f"SELECT r.NAME, h.VALUE FROM VfiTagNumHistory_Ultimo h JOIN VfiTagRef r ON h.GATEID = r.GATEID WHERE r.NAME IN ('{"', '".join(tags_aux)}') AND h.FECHA = (SELECT MAX(FECHA) FROM VfiTagNumHistory_Ultimo WHERE GATEID = h.GATEID)", ENGINE_SCADA)
         mapa_aux = dict(zip(df_h['NAME'].astype(str), df_h['VALUE']))
 
         lista_apg, lista_enc = [], []
-        ahora_dt = datetime.now(zona_mx)
+        ahora_actual = datetime.now(zona_mx)
 
         for _, row in df.iterrows():
             df_match = df_dic[df_dic['bomba'] == row['NAME']]
@@ -90,9 +81,16 @@ while True:
             if row['VALUE'] == 0:
                 estatus, razon = ("⚠️ Parado por incidencia", inc) if inc != "Sin incidencia" else (("✅ Normal", "Operación normal") if (es_periodo_de_paro_programado(convertir_a_hora(mapa_aux.get(str(info['H_paro']))), convertir_a_hora(mapa_aux.get(str(info['H_arranque'])))) or (n_tq >= n_par and n_par > 0) or (n_tq >= (n_arr * 0.30) and n_tq < n_par)) else (("No arranca con su condición de tanque", "Nivel bajo") if n_tq < (n_arr * 0.30) and n_arr > 0 else ("❌ Desconocida", "Estatus desconocido")))
                 
-                if (st.session_state.alertas_activas and inc == "Sin incidencia" and razon != "Operación normal" and (ahora_dt - fecha_bd) > timedelta(minutes=90) and info['Pozos'] not in st.session_state.alertas_enviadas):
+                # REGLAS: Alerta solo hoy, después de 1 hora, si el toggle está activo
+                if (st.session_state.alertas_activas and 
+                    fecha_bd.date() == ahora_actual.date() and 
+                    (ahora_actual - fecha_bd) >= timedelta(hours=1) and 
+                    inc == "Sin incidencia" and 
+                    razon != "Operación normal" and 
+                    info['Pozos'] not in st.session_state.alertas_enviadas):
+                    
                     enviar_alerta(info['Pozos'], f"{n_tq:.2f}", f"{n_arr:.2f}", row['FECHA'].time(), convertir_a_hora(mapa_aux.get(str(info['H_paro']))), convertir_a_hora(mapa_aux.get(str(info['H_arranque']))), razon)
-                    st.session_state.alertas_enviadas[info['Pozos']] = ahora_dt
+                    st.session_state.alertas_enviadas[info['Pozos']] = ahora_actual
                 
                 lista_apg.append({"Pozo": info['Pozos'], "Estatus_Paro": estatus, "Fecha": row['FECHA'].date(), "Hora": row['FECHA'].time(), "Incidencia": inc, "Nivel_Tanque": f"{n_tq:.2f}" if n_tq > 0 else "Directo a red", "Nivel_Arranque": f"{n_arr:.2f}" if n_arr > 0 else "", "Nivel_Paro": f"{n_par:.2f}" if n_par > 0 else "", "V_L1": f"{float(mapa_aux.get(str(info['voltaje_L1']), 0)):.2f}", "V_L2": f"{float(mapa_aux.get(str(info['voltaje_L2']), 0)):.2f}", "V_L3": f"{float(mapa_aux.get(str(info['voltaje_L3']), 0)):.2f}", "TS": row['FECHA']})
             else:
