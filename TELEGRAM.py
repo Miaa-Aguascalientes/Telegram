@@ -36,7 +36,14 @@ def enviar_alerta(pozo, nivel, nivel_arr, hora, h_paro, h_arranque, razon):
     st.session_state.logs.append(f"[{datetime.now(zona_mx).strftime('%H:%M:%S')}] Alerta enviada: {pozo} - {razon}")
 
 # --- CSS Y MOTORES ---
-st.write("""<style>#MainMenu, header {visibility: hidden;} .log-console {background-color: #0e1117; color: #00FF00; font-family: monospace; padding: 10px; border: 1px solid #003366; border-radius: 5px; height: 150px; overflow-y: scroll; font-size: 0.85rem;}</style>""", unsafe_allow_html=True)
+st.write("""
+<style>
+    #MainMenu, header {visibility: hidden;}
+    .block-container {padding-top: 0rem !important; padding-bottom: 0rem !important;}
+    .custom-title {color: #00E5FF !important; font-size: 2rem; font-weight: bold; margin-bottom: 0px; text-align: center; margin-top: 0px;}
+    .log-console {background-color: #0e1117; color: #00FF00; font-family: monospace; padding: 10px; border: 1px solid #003366; border-radius: 5px; height: 150px; overflow-y: scroll; font-size: 0.85rem;}
+</style>
+""", unsafe_allow_html=True)
 
 @st.cache_resource
 def get_engines(): return create_engine(st.secrets["databases"]["url_dic"], pool_pre_ping=True, pool_recycle=1800), create_engine(st.secrets["databases"]["url_scada"], pool_pre_ping=True, pool_recycle=1800)
@@ -46,9 +53,11 @@ def convertir_a_hora(valor):
     try: m = float(valor); return time(int((m // 60) % 24), int(m % 60))
     except: return time(0, 0)
 
-col_h1, col_h2 = st.columns([1, 10])
-with col_h1: st.image("https://raw.githubusercontent.com/Miaa-Aguascalientes/Logos/38504978c8f77a4dac38ad476f74dbdee6af2cad/LogoMIAA.svg", width=150)
-with col_h2: st.markdown('<h1 style="color: #00E5FF; text-align: center;">Sistema de Monitoreo</h1>', unsafe_allow_html=True)
+header_col1, header_col2 = st.columns([1, 10])
+with header_col1: 
+    st.image("https://raw.githubusercontent.com/Miaa-Aguascalientes/Logos/38504978c8f77a4dac38ad476f74dbdee6af2cad/LogoMIAA.svg", width=150)
+with header_col2: 
+    st.markdown('<h1 class="custom-title">Sistema de Monitoreo</h1>', unsafe_allow_html=True)
 
 placeholder = st.empty()
 while True:
