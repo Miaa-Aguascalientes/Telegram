@@ -17,10 +17,11 @@ if 'logs' not in st.session_state:
     st.session_state.logs = []
 
 zona_mx = ZoneInfo("America/Mexico_City")
-# --- FUNCIONES DE TELEGRAM ---
+
+# --- FUNCIONES ---
 def es_periodo_de_paro_programado(t_par, t_arr):
     if t_par == time(0, 0) and t_arr == time(0, 0): return False
-    ahora = datetime.now().time()
+    ahora = datetime.now(zona_mx).time()
     if t_par < t_arr: return t_par <= ahora <= t_arr
     else: return ahora >= t_par or ahora <= t_arr
 
@@ -42,13 +43,11 @@ def enviar_alerta(pozo, nivel, nivel_arr, hora, h_paro, h_arranque, razon):
             query = "SELECT chart_id FROM Diccionario_telegram WHERE activo = 'Si'"
             df_ids = pd.read_sql(query, ENGINE_DIC)
             for chat_id in df_ids['chart_id'].tolist():
-                try:
-                    requests.get(f"https://api.telegram.org/bot{token}/sendMessage", 
-                                 params={'chat_id': chat_id, 'text': mensaje, 'parse_mode': 'HTML'}, timeout=5)
-                except: continue
+                requests.get(f"https://api.telegram.org/bot{token}/sendMessage", 
+                             params={'chat_id': chat_id, 'text': mensaje, 'parse_mode': 'HTML'}, timeout=5)
         except: pass
     threading.Thread(target=send, daemon=True).start()
-    st.session_state.logs.append(f"[{datetime.now().strftime('%H:%M:%S')}] Alerta enviada: {pozo} - {razon}")
+    st.session_state.logs.append(f"[{datetime.now(zona_mx).strftime('%H:%M:%S')}] Alerta enviada: {pozo} - {razon}")
 
 # --- CSS ---
 st.write("""
@@ -56,17 +55,10 @@ st.write("""
     #MainMenu, header {visibility: hidden;}
     .block-container {padding-top: 0.2rem !important; padding-bottom: 0rem !important;}
     .custom-title {color: #00E5FF !important; font-size: 2rem; font-weight: bold; margin-bottom: 5px; text-align: center;}
-    .dashboard-card {
-        background: linear-gradient(135deg, #1e2630 0%, #0e1117 100%);
-        border: 2px solid #003366; border-radius: 8px; padding: 4px 8px !important; text-align: center; margin: 2px !important;
-        display: flex; justify-content: space-between; align-items: center;
-    }
+    .dashboard-card {background: linear-gradient(135deg, #1e2630 0%, #0e1117 100%); border: 2px solid #003366; border-radius: 8px; padding: 4px 8px !important; text-align: center; margin: 2px !important; display: flex; justify-content: space-between; align-items: center;}
     .card-label {color: #ffffff; font-size: 0.85rem !important; font-weight: 500; margin: 0 !important;}
     .card-value {font-size: 1rem !important; font-weight: bold; margin-left: 10px;}
-    .log-console {
-        background-color: #0e1117; color: #00FF00; font-family: monospace; padding: 10px; 
-        border: 1px solid #003366; border-radius: 5px; height: 150px; overflow-y: scroll; font-size: 0.85rem;
-    }
+    .log-console {background-color: #0e1117; color: #00FF00; font-family: monospace; padding: 10px; border: 1px solid #003366; border-radius: 5px; height: 150px; overflow-y: scroll; font-size: 0.85rem;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -75,16 +67,12 @@ def render_card(label, value, color_val, icon):
 
 @st.cache_resource
 def get_engines():
-    eng_dic = create_engine(st.secrets["databases"]["url_dic"], pool_pre_ping=True, pool_recycle=1800)
-    eng_scada = create_engine(st.secrets["databases"]["url_scada"], pool_pre_ping=True, pool_recycle=1800)
-    return eng_dic, eng_scada
+    return create_engine(st.secrets["databases"]["url_dic"], pool_pre_ping=True), create_engine(st.secrets["databases"]["url_scada"], pool_pre_ping=True)
 
 ENGINE_DIC, ENGINE_SCADA = get_engines()
 
 def convertir_a_hora(valor):
-    try:
-        m = float(valor)
-        return time(int((m // 60) % 24), int(m % 60))
+    try: m = float(valor); return time(int((m // 60) % 24), int(m % 60))
     except: return time(0, 0)
 
 col_h1, col_h2 = st.columns([1, 10])
@@ -114,7 +102,7 @@ while True:
         mapa_aux = dict(zip(df_h['NAME'].astype(str), df_h['VALUE']))
 
         lista_apg, lista_enc = [], []
-        ahora_dt = datetime.now(ZoneInfo("America/Mexico_City"))
+        ahora_dt = datetime.now(zona_mx)
 
         for _, row in df.iterrows():
             df_match = df_dic[df_dic['bomba'] == row['NAME']]
@@ -128,88 +116,48 @@ while True:
             n_par = float(mapa_aux.get(str(info['nivel_paro_tq']), 0) or 0)
             h_p = convertir_a_hora(mapa_aux.get(str(info['H_paro'])))
             h_a = convertir_a_hora(mapa_aux.get(str(info['H_arranque'])))
-            v1 = mapa_aux.get(str(info['voltaje_L1']), 0)
-            v2 = mapa_aux.get(str(info['voltaje_L2']), 0)
-            v3 = mapa_aux.get(str(info['voltaje_L3']), 0)
+            v1, v2, v3 = mapa_aux.get(str(info['voltaje_L1']), 0), mapa_aux.get(str(info['voltaje_L2']), 0), mapa_aux.get(str(info['voltaje_L3']), 0)
             
-            es_programado = es_periodo_de_paro_programado(h_p, h_a)
-
             fecha_bd = row['FECHA'].tz_localize(None).replace(tzinfo=zona_mx) if row['FECHA'].tzinfo is None else row['FECHA'].astimezone(zona_mx)
             
             if row['VALUE'] == 0:
                 if inc != "Sin incidencia": estatus, razon = "⚠️ Parado por incidencia", inc
-                elif es_programado or (n_tq >= n_par and n_par > 0) or (n_tq >= (n_arr * 0.30) and n_tq < n_par): estatus, razon = "✅ Normal", "Operación normal"
+                elif es_periodo_de_paro_programado(h_p, h_a) or (n_tq >= n_par and n_par > 0) or (n_tq >= (n_arr * 0.30) and n_tq < n_par): estatus, razon = "✅ Normal", "Operación normal"
                 elif n_tq < (n_arr * 0.30) and n_arr > 0: estatus, razon = "No arranca con su condición de tanque", "Nivel bajo"
                 else: estatus, razon = "❌ Desconocida", "Estatus desconocido"
                 
-                if inc == "Sin incidencia" and razon != "Operación normal" and (ahora_dt - row['FECHA']) > timedelta(minutes=90):
+                if inc == "Sin incidencia" and razon != "Operación normal" and (ahora_dt - fecha_bd) > timedelta(minutes=90):
                     if info['Pozos'] not in st.session_state.alertas_enviadas:
                         enviar_alerta(info['Pozos'], f"{n_tq:.2f}", f"{n_arr:.2f}", row['FECHA'].time(), h_p, h_a, razon)
                         st.session_state.alertas_enviadas[info['Pozos']] = ahora_dt
                 
-            val_arr = f"{n_arr:.2f}" if n_arr > 0 else ""
-            val_par = f"{n_par:.2f}" if n_par > 0 else ""
-            val_tq = f"{n_tq:.2f}" if n_tq > 0 else "Directo a red"
-            
-            if row['VALUE'] == 0:
-                # ... (lógica de estatus)
-                
                 lista_apg.append({
-                    "Pozo": info['Pozos'], 
-                    "Estatus_Paro": estatus, 
-                    "Fecha": row['FECHA'].date(), 
-                    "Hora": row['FECHA'].time(), 
-                    "Incidencia": inc,
-                    "Nivel_Tanque": val_tq,      # Muestra valor o "Directo a red"
-                    "Nivel_Arranque": val_arr,   # Vacío si es 0
-                    "Nivel_Paro": val_par,       # Vacío si es 0
-                    "V_L1": f"{float(v1):.2f}",
-                    "V_L2": f"{float(v2):.2f}",
-                    "V_L3": f"{float(v3):.2f}", 
-                    "TS": row['FECHA']
+                    "Pozo": info['Pozos'], "Estatus_Paro": estatus, "Fecha": row['FECHA'].date(), "Hora": row['FECHA'].time(), 
+                    "Incidencia": inc, "Nivel_Tanque": f"{n_tq:.2f}" if n_tq > 0 else "Directo a red",
+                    "Nivel_Arranque": f"{n_arr:.2f}" if n_arr > 0 else "", "Nivel_Paro": f"{n_par:.2f}" if n_par > 0 else "",
+                    "V_L1": f"{float(v1):.2f}", "V_L2": f"{float(v2):.2f}", "V_L3": f"{float(v3):.2f}", "TS": row['FECHA']
                 })
             else:
                 if info['Pozos'] in st.session_state.alertas_enviadas: del st.session_state.alertas_enviadas[info['Pozos']]
                 lista_enc.append({"Pozo": info['Pozos'], "Fecha": row['FECHA'].date(), "Hora": row['FECHA'].time()})
 
         df_final = pd.DataFrame(lista_apg).sort_values(by='TS', ascending=False) if lista_apg else pd.DataFrame()
-        df_enc_full = pd.DataFrame(lista_enc).sort_values(by='Fecha', ascending=False) if lista_enc else pd.DataFrame()
         
-        cols_ind = st.columns(4)
-        with cols_ind[0]: render_card("Total Apagados", len(df_final), "#FFFFFF", "🔴")
-        if not df_final.empty:
-            with cols_ind[1]: render_card("Estatus Normal", len(df_final[df_final['Estatus_Paro'].str.contains('✅')]), "#00FF00", "✅")
-            with cols_ind[2]: render_card("Por Incidencia", len(df_final[df_final['Estatus_Paro'].str.contains('⚠️')]), "#FFD700", "⚠️")
-            with cols_ind[3]: render_card("Desconocida", len(df_final[df_final['Estatus_Paro'].str.contains('❌')]), "#FF0000", "❌")
-        
-        st.markdown("<hr>", unsafe_allow_html=True)
+        # Renderizado
         col_izq, col_der = st.columns([0.65, 0.35])
-        
         with col_izq:
             st.subheader("🔴 Pozos Apagados")
             if not df_final.empty:
                 df_mostrar = df_final.drop(columns=['TS']).copy()
                 df_mostrar['Fecha'] = df_mostrar['Fecha'].apply(lambda x: x.strftime('%d/%m/%y'))
                 df_mostrar['Hora'] = df_mostrar['Hora'].apply(lambda x: x.strftime('%H:%M:%S'))
-                
-                def color_fila(row):
-                    e = str(row['Estatus_Paro'])
-                    c = '#FFD700' if '⚠️' in e else ('#00FF00' if '✅' in e else ('#FF0000' if '❌' in e else 'inherit'))
-                    return [f'color: {c}'] * len(row)
-                
-                st.dataframe(
-                    df_mostrar.style.apply(color_fila, axis=1)
-                    .set_properties(**{'text-align': 'center'}, subset=['Nivel_Tanque', 'Nivel_Arranque', 'Nivel_Paro', 'V_L1', 'V_L2', 'V_L3']), 
-                    use_container_width=True, hide_index=True
-                )
+                st.dataframe(df_mostrar.style.apply(lambda row: [f'color: {"#FFD700" if "⚠️" in str(row["Estatus_Paro"]) else ("#00FF00" if "✅" in str(row["Estatus_Paro"]) else ("#FF0000" if "❌" in str(row["Estatus_Paro"]) else "inherit"))}'] * len(row), axis=1)
+                             .set_properties(**{'text-align': 'center'}, subset=['Nivel_Tanque', 'Nivel_Arranque', 'Nivel_Paro', 'V_L1', 'V_L2', 'V_L3']), use_container_width=True, hide_index=True)
         
         with col_der:
             st.subheader("🟢 Pozos Encendidos")
             if not df_enc_full.empty: st.dataframe(df_enc_full, use_container_width=True, hide_index=True)
             
         st.subheader("📋 Registro de Alertas")
-        # Creamos un contenedor con scroll que liste cada registro en una línea nueva
-        log_html = '<div class="log-console">' + '<br>'.join(reversed(st.session_state.logs)) + '</div>'
-        st.markdown(log_html, unsafe_allow_html=True)
+        st.markdown(f'<div class="log-console">{"<br>".join(reversed(st.session_state.logs))}</div>', unsafe_allow_html=True)
     t.sleep(30)
-
