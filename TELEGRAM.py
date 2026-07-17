@@ -190,4 +190,4 @@ while True:
         st.subheader("📋 Registro de Alertas")
         st.markdown(f'<div class="log-console">{"\n".join(st.session_state.logs[-15:])}</div>', unsafe_allow_html=True)
     t.sleep(30)
-```[cite: 1]
+
