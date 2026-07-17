@@ -92,7 +92,7 @@ col_h1, col_h2 = st.columns([1, 10])
 with col_h1: st.image("https://raw.githubusercontent.com/Miaa-Aguascalientes/Logos/38504978c8f77a4dac38ad476f74dbdee6af2cad/LogoMIAA.svg", width=150)
 with col_h2: st.markdown('<h1 class="custom-title">Sistema de Monitoreo</h1>', unsafe_allow_html=True)
 
-st.toggle("Activar envío de alertas a Telegram", key="alertas_activas") # Botón de control
+
 
 placeholder = st.empty()
 
@@ -192,7 +192,8 @@ while True:
         with col_der:
             st.subheader("🟢 Pozos Encendidos")
             if not df_enc_full.empty: st.dataframe(df_enc_full, use_container_width=True, hide_index=True)
-            
+                
+        st.toggle("Activar envío de alertas a Telegram", key="alertas_activas") # Botón de control    
         st.subheader("📋 Registro de Alertas")
         st.markdown(f'<div class="log-console">{"<br>".join(reversed(st.session_state.logs))}</div>', unsafe_allow_html=True)
     t.sleep(30)
