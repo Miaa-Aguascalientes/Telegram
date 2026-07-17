@@ -23,25 +23,65 @@ def es_periodo_de_paro_programado(t_par, t_arr):
 
 def enviar_alerta(pozo, nivel, nivel_arr, hora, h_paro, h_arranque, razon):
     token = st.secrets["telegram"]["token"]
-    mensaje = f"📢 <b>Reporte Automatico Miaa</b>\n________________________________\n⚠️ <b>Alerta:</b> Bomba Apagada\n📍 <b>Pozo:</b> {pozo}\n⏳ <b>Hora del paro:</b> {hora}\n💧 <b>Nivel Tanque:</b> {nivel} mts.\n↕️ <b>Nivel Arranque con TQ:</b> {nivel_arr} mts.\n⏲️ <b>Horario de Op:</b> {h_paro} - {h_arranque}\n🔍 <b>Motivo:</b> {razon}"
+    mensaje = (
+        f"📢 <b>Reporte Automatico Miaa</b>\n"
+        f"________________________________\n"
+        f"⚠️ <b>Alerta:</b> Bomba Apagada\n"
+        f"📍 <b>Pozo:</b> {pozo}\n"
+        f"⏳ <b>Hora del paro:</b> {hora}\n"
+        f"💧 <b>Nivel Tanque:</b> {nivel} mts.\n"
+        f"↕️ <b>Nivel Arranque con TQ:</b> {nivel_arr} mts.\n"           
+        f"⏲️ <b>Horario de Op:</b> {h_paro} - {h_arranque}\n"
+        f"🔍 <b>Motivo:</b> {razon}"
+    )
     def send():
         try:
-            df_ids = pd.read_sql("SELECT chart_id FROM Diccionario_telegram WHERE activo = 'Si'", ENGINE_DIC)
-            for chat_id in df_ids['chart_id'].tolist(): requests.get(f"https://api.telegram.org/bot{token}/sendMessage", params={'chat_id': chat_id, 'text': mensaje, 'parse_mode': 'HTML'}, timeout=5)
+            query = "SELECT chart_id FROM Diccionario_telegram WHERE activo = 'Si'"
+            df_ids = pd.read_sql(query, ENGINE_DIC)
+            for chat_id in df_ids['chart_id'].tolist():
+                try:
+                    requests.get(f"https://api.telegram.org/bot{token}/sendMessage", 
+                                 params={'chat_id': chat_id, 'text': mensaje, 'parse_mode': 'HTML'}, timeout=5)
+                except: continue
         except: pass
     threading.Thread(target=send, daemon=True).start()
-    st.session_state.logs.append(f"[{datetime.now(zona_mx).strftime('%H:%M:%S')}] Alerta enviada: {pozo} - {razon}")
+    st.session_state.logs.append(f"[{datetime.now().strftime('%H:%M:%S')}] Alerta enviada: {pozo} - {razon}")
 
-st.write("""<style>#MainMenu, header {visibility: hidden;} .block-container {padding-top: 0.2rem !important; padding-bottom: 0rem !important;} .custom-title {color: #00E5FF !important; font-size: 2rem; font-weight: bold; margin-bottom: 5px; text-align: center;} .dashboard-card {background: linear-gradient(135deg, #1e2630 0%, #0e1117 100%); border: 2px solid #003366; border-radius: 8px; padding: 4px 8px !important; text-align: center; margin: 2px !important; display: flex; justify-content: space-between; align-items: center;} .card-label {color: #ffffff; font-size: 0.85rem !important; font-weight: 500; margin: 0 !important;} .card-value {font-size: 1rem !important; font-weight: bold; margin-left: 10px;} .log-console {background-color: #0e1117; color: #00FF00; font-family: monospace; padding: 10px; border: 1px solid #003366; border-radius: 5px; height: 150px; overflow-y: scroll; font-size: 0.85rem;}</style>""", unsafe_allow_html=True)
+# --- CSS ---
+st.write("""
+<style>
+    #MainMenu, header {visibility: hidden;}
+    .block-container {padding-top: 0.2rem !important; padding-bottom: 0rem !important;}
+    .custom-title {color: #00E5FF !important; font-size: 2rem; font-weight: bold; margin-bottom: 5px; text-align: center;}
+    .dashboard-card {
+        background: linear-gradient(135deg, #1e2630 0%, #0e1117 100%);
+        border: 2px solid #003366; border-radius: 8px; padding: 4px 8px !important; text-align: center; margin: 2px !important;
+        display: flex; justify-content: space-between; align-items: center;
+    }
+    .card-label {color: #ffffff; font-size: 0.85rem !important; font-weight: 500; margin: 0 !important;}
+    .card-value {font-size: 1rem !important; font-weight: bold; margin-left: 10px;}
+    .log-console {
+        background-color: #0e1117; color: #00FF00; font-family: monospace; padding: 10px; 
+        border: 1px solid #003366; border-radius: 5px; height: 150px; overflow-y: scroll; font-size: 0.85rem;
+    }
+</style>
+""", unsafe_allow_html=True)
 
-def render_card(label, value, color_val, icon): st.write(f'<div class="dashboard-card"><div class="card-label">{icon} {label}</div><div class="card-value" style="color: {color_val}">{value}</div></div>', unsafe_allow_html=True)
+def render_card(label, value, color_val, icon):
+    st.write(f'<div class="dashboard-card"><div class="card-label">{icon} {label}</div><div class="card-value" style="color: {color_val}">{value}</div></div>', unsafe_allow_html=True)
 
 @st.cache_resource
-def get_engines(): return create_engine(st.secrets["databases"]["url_dic"], pool_pre_ping=True), create_engine(st.secrets["databases"]["url_scada"], pool_pre_ping=True)
+def get_engines():
+    eng_dic = create_engine(st.secrets["databases"]["url_dic"], pool_pre_ping=True, pool_recycle=1800)
+    eng_scada = create_engine(st.secrets["databases"]["url_scada"], pool_pre_ping=True, pool_recycle=1800)
+    return eng_dic, eng_scada
 
 ENGINE_DIC, ENGINE_SCADA = get_engines()
+
 def convertir_a_hora(valor):
-    try: m = float(valor); return time(int((m // 60) % 24), int(m % 60))
+    try:
+        m = float(valor)
+        return time(int((m // 60) % 24), int(m % 60))
     except: return time(0, 0)
 
 col_h1, col_h2 = st.columns([1, 10])
@@ -49,6 +89,7 @@ with col_h1: st.image("https://raw.githubusercontent.com/Miaa-Aguascalientes/Log
 with col_h2: st.markdown('<h1 class="custom-title">Sistema de Monitoreo</h1>', unsafe_allow_html=True)
 
 placeholder = st.empty()
+
 while True:
     with placeholder.container():
         df_dic = pd.read_sql("SELECT * FROM Diccionario_de_pozos WHERE bomba != 'Sin telemetria'", ENGINE_DIC)
@@ -73,7 +114,15 @@ while True:
             if df_match.empty: continue
             info = df_match.iloc[0]
             inc = mapa_inc.get(str(info['Pozos']).replace('-', '').replace(' ', ''), "Sin incidencia")
-            n_tq, n_arr, n_par = float(mapa_aux.get(str(info['nivel_tanque']), 0) or 0), float(mapa_aux.get(str(info['nivel_arranque_tq']), 0) or 0), float(mapa_aux.get(str(info['nivel_paro_tq']), 0) or 0)
+            
+            n_tq = float(mapa_aux.get(str(info['nivel_tanque']), 0) or 0)
+            n_arr = float(mapa_aux.get(str(info['nivel_arranque_tq']), 0) or 0)
+            n_par = float(mapa_aux.get(str(info['nivel_paro_tq']), 0) or 0)
+            h_p = convertir_a_hora(mapa_aux.get(str(info['H_paro'])))
+            h_a = convertir_a_hora(mapa_aux.get(str(info['H_arranque'])))
+            v1 = mapa_aux.get(str(info['voltaje_L1']), 0)
+            v2 = mapa_aux.get(str(info['voltaje_L2']), 0)
+            v3 = mapa_aux.get(str(info['voltaje_L3']), 0)
             
             fecha_bd = row['FECHA'].tz_localize(None).replace(tzinfo=zona_mx) if row['FECHA'].tzinfo is None else row['FECHA'].astimezone(zona_mx)
             
@@ -82,7 +131,21 @@ while True:
                 if inc == "Sin incidencia" and razon != "Operación normal" and (ahora_dt - fecha_bd) > timedelta(minutes=90) and info['Pozos'] not in st.session_state.alertas_enviadas:
                     enviar_alerta(info['Pozos'], f"{n_tq:.2f}", f"{n_arr:.2f}", row['FECHA'].time(), convertir_a_hora(mapa_aux.get(str(info['H_paro']))), convertir_a_hora(mapa_aux.get(str(info['H_arranque']))), razon)
                     st.session_state.alertas_enviadas[info['Pozos']] = ahora_dt
-                lista_apg.append({"Pozo": info['Pozos'], "Estatus_Paro": estatus, "Fecha": row['FECHA'].date(), "Hora": row['FECHA'].time(), "Incidencia": inc, "Nivel_Tanque": f"{n_tq:.2f}" if n_tq > 0 else "Directo a red", "Nivel_Arranque": f"{n_arr:.2f}" if n_arr > 0 else "", "Nivel_Paro": f"{n_par:.2f}" if n_par > 0 else "", "V_L1": f"{float(mapa_aux.get(str(info['voltaje_L1']), 0)):.2f}", "V_L2": f"{float(mapa_aux.get(str(info['voltaje_L2']), 0)):.2f}", "V_L3": f"{float(mapa_aux.get(str(info['voltaje_L3']), 0)):.2f}", "TS": row['FECHA']})
+                    
+                lista_apg.append({
+                    "Pozo": info['Pozos'], 
+                    "Estatus_Paro": estatus, 
+                    "Fecha": row['FECHA'].date(), 
+                    "Hora": row['FECHA'].time(), 
+                    "Incidencia": inc,
+                    "Nivel_Tanque": val_tq,      # Muestra valor o "Directo a red"
+                    "Nivel_Arranque": val_arr,   # Vacío si es 0
+                    "Nivel_Paro": val_par,       # Vacío si es 0
+                    "V_L1": f"{float(v1):.2f}",
+                    "V_L2": f"{float(v2):.2f}",
+                    "V_L3": f"{float(v3):.2f}", 
+                    "TS": row['FECHA']
+                })
             else:
                 if info['Pozos'] in st.session_state.alertas_enviadas: del st.session_state.alertas_enviadas[info['Pozos']]
                 lista_enc.append({"Pozo": info['Pozos'], "Fecha": row['FECHA'].date(), "Hora": row['FECHA'].time()})
