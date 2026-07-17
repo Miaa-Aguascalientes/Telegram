@@ -143,15 +143,21 @@ while True:
                         enviar_alerta(info['Pozos'], f"{n_tq:.2f}", f"{n_arr:.2f}", row['FECHA'].time(), h_p, h_a, razon)
                         st.session_state.alertas_enviadas[info['Pozos']] = ahora_dt
                 
+            val_arr = f"{n_arr:.2f}" if n_arr > 0 else ""
+            val_par = f"{n_par:.2f}" if n_par > 0 else ""
+            
+            if row['VALUE'] == 0:
+                # ... (lógica de estatus)
+                
                 lista_apg.append({
                     "Pozo": info['Pozos'], 
                     "Estatus_Paro": estatus, 
                     "Fecha": row['FECHA'].date(), 
                     "Hora": row['FECHA'].time(), 
                     "Incidencia": inc,
-                    "Nivel_Tanque": f"{n_tq:.2f}", # Columna restaurada
-                    "Nivel_Arranque": f"{n_arr:.2f}",
-                    "Nivel_Paro": f"{n_par:.2f}", 
+                    "Nivel_Tanque": f"{n_tq:.2f}",
+                    "Nivel_Arranque": val_arr, # Usa el valor vacío si es 0
+                    "Nivel_Paro": val_par,     # Usa el valor vacío si es 0
                     "V_L1": f"{float(v1):.2f}",
                     "V_L2": f"{float(v2):.2f}",
                     "V_L3": f"{float(v3):.2f}", 
