@@ -204,6 +204,8 @@ while True:
             if not df_enc_full.empty: st.dataframe(df_enc_full, use_container_width=True, hide_index=True)
             
         st.subheader("📋 Registro de Alertas")
-        st.markdown(f'<div class="log-console">{"\n".join(st.session_state.logs[-15:])}</div>', unsafe_allow_html=True)
+        # Creamos un contenedor con scroll que liste cada registro en una línea nueva
+        log_html = '<div class="log-console">' + '<br>'.join(reversed(st.session_state.logs)) + '</div>'
+        st.markdown(log_html, unsafe_allow_html=True)
     t.sleep(30)
 
