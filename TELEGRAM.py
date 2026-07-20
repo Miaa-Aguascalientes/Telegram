@@ -54,12 +54,15 @@ with col_h2: st.markdown('<h1 class="custom-title">Sistema de Monitoreo</h1>', u
 st.divider()
 
 # --- FILA ALINEADA: TOGGLE Y BUSCADOR ---
-c1, c2 = st.columns([0.3, 0.7])
+c1, c2, c3 = st.columns([0.3, 0.3, 0.4]) # Dividimos en 3 columnas
 with c1:
-    st.write("###") # Compensación visual para alinear con el buscador
+    st.write("###") 
     st.toggle("Activar envío de alertas a Telegram", key="alertas_activas") 
 with c2:
+    # El buscador ahora vive en la columna c2 (que ocupa solo el 30% del ancho)
     st.text_input("🔍 Buscar pozo (solo encendidos)...", key='busqueda_pozo')
+with c3:
+    st.empty()
 
 # --- ESTRUCTURA ---
 col_izq, col_der = st.columns([0.65, 0.35])
