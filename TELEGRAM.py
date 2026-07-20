@@ -25,6 +25,11 @@ def es_periodo_de_paro_programado(t_par, t_arr):
     if t_par < t_arr: return t_par <= ahora <= t_arr
     else: return ahora >= t_par or ahora <= t_arr
 
+def registrar_cambio_estado():
+    estado = "ACTIVADO" if st.session_state.alertas_activas else "DESACTIVADO"
+    msg = f"[{datetime.now(zona_mx).strftime('%H:%M:%S')}] Servicio de alertas {estado}"
+    st.session_state.logs.append(msg)
+
 def enviar_alerta(pozo, nivel, nivel_arr, hora_alerta, h_paro, h_arranque, razon, hora_paro):
     token = st.secrets["telegram"]["token"]
     mensaje = f"📢 <b>Reporte Automatico Miaa</b>\n________________________________\n⚠️ <b>Alerta:</b> Bomba Apagada\n📍 <b>Pozo:</b> {pozo}\n⏳ <b>Hora del paro:</b> {hora_paro}\n💧 <b>Nivel Tanque:</b> {nivel} mts.\n↕️ <b>Nivel Arranque con TQ:</b> {nivel_arr} mts.\n⏲️ <b>Horario de Op:</b> {h_paro} - {h_arranque}\n🔍 <b>Motivo:</b> {razon}"
@@ -55,30 +60,24 @@ st.divider()
 
 # --- FILA ALINEADA: TOGGLE Y BUSCADOR ---
 c1, c2, c3 = st.columns([0.3, 0.3, 0.4]) 
-
 with c1:
-    st.write("###") # Ajuste vertical para alinear
-    st.toggle("Activar envío de alertas a Telegram", key="alertas_activas") 
-
+    st.write("###")
+    st.toggle("Activar envío de alertas a Telegram", key="alertas_activas", on_change=registrar_cambio_estado) 
 with c3:
-    # El buscador se mueve a la tercera columna (c3)
     st.text_input("🔍 Buscar pozo (solo encendidos)...", key='busqueda_pozo')
 
-# --- ESTRUCTURA DE LAS TABLAS ---
-# Mantenemos las columnas de las tablas separadas para que no se afecten
+# --- ESTRUCTURA ---
 col_izq, col_der = st.columns([0.65, 0.35])
-
 with col_izq:
     st.subheader("🔴 Pozos Apagados")
     placeholder_apg = st.empty()
-
 with col_der:
     st.subheader("🟢 Pozos Encendidos")
     placeholder_enc = st.empty()
 
 placeholder_logs = st.empty()
 
-# --- BUCLE PRINCIPAL ---
+# --- BUCLE ---
 while True:
     df_dic = pd.read_sql("SELECT * FROM Diccionario_de_pozos WHERE bomba != 'Sin telemetria'", ENGINE_DIC)
     try:
@@ -116,13 +115,7 @@ while True:
                 enviar_alerta(info['Pozos'], f"{n_tq:.2f}", f"{n_arr:.2f}", row['FECHA'].time(), h_p_val, h_a_val, razon, row['FECHA'].time().strftime('%H:%M:%S'))
                 st.session_state.alertas_enviadas[info['Pozos']] = ahora_actual
             
-            lista_apg.append({
-                "Pozo": info['Pozos'], "Estatus_Paro": estatus, "Fecha": row['FECHA'].date(), "Hora": row['FECHA'].time(), 
-                "H_Paro": h_p_val, "H_Arranque": h_a_val,
-                "Incidencia": inc, "Nivel_Tanque": f"{n_tq:.2f}" if n_tq > 0 else "Directo a red", 
-                "Nivel_Arranque": f"{n_arr:.2f}" if n_arr > 0 else "", "Nivel_Paro": f"{n_par:.2f}" if n_par > 0 else "", 
-                "V_L1": f"{float(mapa_aux.get(str(info['voltaje_L1']), 0)):.2f}", "V_L2": f"{float(mapa_aux.get(str(info['voltaje_L2']), 0)):.2f}", "V_L3": f"{float(mapa_aux.get(str(info['voltaje_L3']), 0)):.2f}", "TS": row['FECHA']
-            })
+            lista_apg.append({"Pozo": info['Pozos'], "Estatus_Paro": estatus, "Fecha": row['FECHA'].date(), "Hora": row['FECHA'].time(), "H_Paro": h_p_val, "H_Arranque": h_a_val, "Incidencia": inc, "Nivel_Tanque": f"{n_tq:.2f}" if n_tq > 0 else "Directo a red", "Nivel_Arranque": f"{n_arr:.2f}" if n_arr > 0 else "", "Nivel_Paro": f"{n_par:.2f}" if n_par > 0 else "", "V_L1": f"{float(mapa_aux.get(str(info['voltaje_L1']), 0)):.2f}", "V_L2": f"{float(mapa_aux.get(str(info['voltaje_L2']), 0)):.2f}", "V_L3": f"{float(mapa_aux.get(str(info['voltaje_L3']), 0)):.2f}", "TS": row['FECHA']})
         else:
             if info['Pozos'] in st.session_state.alertas_enviadas: del st.session_state.alertas_enviadas[info['Pozos']]
             lista_enc.append({"Pozo": info['Pozos'], "Fecha": row['FECHA'].date(), "Hora": row['FECHA'].time()})
