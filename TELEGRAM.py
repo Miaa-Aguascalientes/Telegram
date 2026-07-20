@@ -24,9 +24,9 @@ def es_periodo_de_paro_programado(t_par, t_arr):
     if t_par < t_arr: return t_par <= ahora <= t_arr
     else: return ahora >= t_par or ahora <= t_arr
 
-def enviar_alerta(pozo, nivel, nivel_arr, hora, h_paro, h_arranque, razon):
+def enviar_alerta(pozo, nivel, nivel_arr, hora, h_paro, h_arranque, razon, hora_paro):
     token = st.secrets["telegram"]["token"]
-    mensaje = f"📢 <b>Reporte Automatico Miaa</b>\n________________________________\n⚠️ <b>Alerta:</b> Bomba Apagada\n📍 <b>Pozo:</b> {pozo}\n⏳ <b>Hora del paro:</b> {hora}\n💧 <b>Nivel Tanque:</b> {nivel} mts.\n↕️ <b>Nivel Arranque con TQ:</b> {nivel_arr} mts.\n⏲️ <b>Horario de Op:</b> {h_paro} - {h_arranque}\n🔍 <b>Motivo:</b> {razon}"
+    mensaje = f"📢 <b>Reporte Automatico Miaa</b>\n________________________________\n⚠️ <b>Alerta:</b> Bomba Apagada\n📍 <b>Pozo:</b> {pozo}\n⏳ <b>Hora del paro:</b> {hora_paro}\n💧 <b>Nivel Tanque:</b> {nivel} mts.\n↕️ <b>Nivel Arranque con TQ:</b> {nivel_arr} mts.\n⏲️ <b>Horario de Op:</b> {h_paro} - {h_arranque}\n🔍 <b>Motivo:</b> {razon}"
     def send():
         try:
             df_ids = pd.read_sql("SELECT chart_id FROM Diccionario_telegram WHERE activo = 'Si'", ENGINE_DIC)
@@ -34,6 +34,7 @@ def enviar_alerta(pozo, nivel, nivel_arr, hora, h_paro, h_arranque, razon):
         except: pass
     threading.Thread(target=send, daemon=True).start()
     st.session_state.logs.append(f"[{datetime.now(zona_mx).strftime('%H:%M:%S')}] Alerta enviada: {pozo} - {razon} (Paro: {hora_paro})")
+
 # --- CSS ---
 st.write("""<style>#MainMenu, header {visibility: hidden;} .block-container {padding-top: 0rem !important; padding-bottom: 0rem !important;} .custom-title {color: #00E5FF !important; font-size: 2rem; font-weight: bold; margin-bottom: 0px; text-align: center; margin-top: 0px;} .log-console {background-color: #0e1117; color: #00FF00; font-family: monospace; padding: 10px; border: 1px solid #003366; border-radius: 5px; height: 150px; overflow-y: scroll; font-size: 0.85rem;}</style>""", unsafe_allow_html=True)
 
@@ -85,10 +86,10 @@ while True:
                 if inc != "Sin incidencia": estatus, razon = "⚠️ Parado por incidencia", inc
                 elif es_periodo_de_paro_programado(h_p_val, h_a_val) or (n_tq >= n_par and n_par > 0) or (n_tq >= umbral_alerta and n_tq < n_par): estatus, razon = "✅ Normal", "Operación normal"
                 elif n_tq < umbral_alerta and n_arr > 0: estatus, razon = "❌ No arranca con su condición de tanque", "Nivel bajo"
-                else: estatus, razon = "❌ Desconocida", "Estatus desconocido"
+                else: estatus, razon = "❌ Estatus desconocido", "Estatus desconocido"
                 
                 if (st.session_state.alertas_activas and fecha_bd.date() == ahora_actual.date() and (ahora_actual - fecha_bd) >= timedelta(hours=1) and inc == "Sin incidencia" and razon != "Operación normal" and info['Pozos'] not in st.session_state.alertas_enviadas):
-                    enviar_alerta(info['Pozos'], f"{n_tq:.2f}", f"{n_arr:.2f}", row['FECHA'].time(), h_p_val, h_a_val, razon)
+                    enviar_alerta(info['Pozos'], f"{n_tq:.2f}", f"{n_arr:.2f}", row['FECHA'].time(), h_p_val, h_a_val, razon, row['FECHA'].time().strftime('%H:%M:%S'))
                     st.session_state.alertas_enviadas[info['Pozos']] = ahora_actual
                 
                 lista_apg.append({
@@ -111,16 +112,22 @@ while True:
             if not df_final.empty:
                 def color_fila(row):
                     e = str(row['Estatus_Paro'])
-                    if "No arranca con su condición de tanque" in e: c = '#FF0000'
+                    if '❌' in e: c = '#FF0000'
                     elif '⚠️' in e: c = '#FFD700'
                     elif '✅' in e: c = '#00FF00'
-                    elif '❌' in e: c = '#FF0000'
                     else: c = 'inherit'
                     return [f'color: {c}'] * len(row)
                 st.dataframe(df_final.drop(columns=['TS']).style.apply(color_fila, axis=1).set_properties(**{'text-align': 'center'}), use_container_width=True, hide_index=True)
+        
         with col_der: 
             st.subheader("🟢 Pozos Encendidos")
-            if not df_enc_full.empty: st.dataframe(df_enc_full, use_container_width=True, hide_index=True)
+            # --- BUSCADOR ---
+            query = st.text_input("🔍 Buscar pozo...", "")
+            df_mostrar = df_enc_full
+            if query:
+                df_mostrar = df_enc_full[df_enc_full['Pozo'].str.contains(query, case=False, na=False)]
+            
+            if not df_mostrar.empty: st.dataframe(df_mostrar, use_container_width=True, hide_index=True)
             
         st.subheader("📋 Registro de Alertas")
         st.markdown(f'<div class="log-console">{"<br>".join(reversed(st.session_state.logs))}</div>', unsafe_allow_html=True)
