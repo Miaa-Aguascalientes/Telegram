@@ -69,7 +69,7 @@ col_h1, col_h2 = st.columns([2, 9]) # Le damos más espacio a la columna del log
 with col_h1:
     # Fuerza máxima: usamos un contenedor que impone el tamaño sí o sí
     st.markdown("""
-        <div style="width: 400px;">
+        <div style="width: 300px;">
             <img src="https://raw.githubusercontent.com/Miaa-Aguascalientes/Logos/38504978c8f77a4dac38ad476f74dbdee6af2cad/LogoMIAA.svg" 
                  style="width: 100%; height: auto; display: block;">
         </div>
