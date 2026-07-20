@@ -47,7 +47,7 @@ st.write("""<style>
     .block-container {padding-top: 0rem !important; padding-bottom: 0rem !important;} 
     .custom-title {color: #00E5FF !important; font-size: 2rem; font-weight: bold; margin-bottom: 0px; text-align: center; margin-top: 0px;} 
     .log-console {background-color: #0e1117; color: #00FF00; font-family: monospace; padding: 10px; border: 1px solid #003366; border-radius: 5px; height: 150px; overflow-y: scroll; font-size: 0.85rem;}
-    .logo-style {width: 550px !important; height: auto !important;}
+    .logo-style {width: 1550px !important; height: auto !important;}
 </style>""", unsafe_allow_html=True)
 
 @st.cache_resource
