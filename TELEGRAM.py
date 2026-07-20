@@ -47,32 +47,35 @@ def convertir_a_hora(valor):
     try: m = float(valor); return time(int((m // 60) % 24), int(m % 60))
     except: return time(0, 0)
 
-# --- INTERFAZ FIJA ---
+# --- CABECERA ---
 col_h1, col_h2 = st.columns([1, 10])
 with col_h1: st.image("https://raw.githubusercontent.com/Miaa-Aguascalientes/Logos/38504978c8f77a4dac38ad476f74dbdee6af2cad/LogoMIAA.svg", width=150)
 with col_h2: st.markdown('<h1 class="custom-title">Sistema de Monitoreo</h1>', unsafe_allow_html=True)
+
 st.toggle("Activar envío de alertas a Telegram", key="alertas_activas") 
 
-# Creamos las columnas fuera del bucle
+# --- ESTRUCTURA ORIGINAL ---
 col_izq, col_der = st.columns([0.65, 0.35])
-with col_der:
+
+# --- CONTENEDORES PARA LAS TABLAS QUE SE REFRESCA ---
+table_apg = col_izq.empty()
+table_enc = col_der.empty()
+log_area = st.empty()
+
+# Encabezados estáticos
+with col_izq: st.subheader("🔴 Pozos Apagados")
+with col_der: 
     st.subheader("🟢 Pozos Encendidos")
     st.text_input("🔍 Buscar pozo...", key='busqueda_pozo')
-
-# Creamos contenedores vacíos para que las tablas se actualicen en su sitio
-placeholder_izq = col_izq.empty()
-placeholder_der = col_der.empty()
-placeholder_logs = st.empty()
 
 while True:
     # --- LÓGICA DE DATOS ---
     df_dic = pd.read_sql("SELECT * FROM Diccionario_de_pozos WHERE bomba != 'Sin telemetria'", ENGINE_DIC)
-    try:
-        df_inc = pd.read_sql("SELECT NUM_POZO, DIAGNOSTICO_FALLA FROM vw_incidencias_en_pozos WHERE ESTATUS != 'Cerrada'", ENGINE_SCADA)
-        df_inc['KEY'] = df_inc['NUM_POZO'].astype(str).str.replace(r'[- ]', '', regex=True)
-        mapa_inc = dict(zip(df_inc['KEY'], df_inc['DIAGNOSTICO_FALLA']))
-    except: mapa_inc = {}
-
+    # ... (aquí va tu lógica de lectura de BD igual a como la tenías)
+    df_inc = pd.read_sql("SELECT NUM_POZO, DIAGNOSTICO_FALLA FROM vw_incidencias_en_pozos WHERE ESTATUS != 'Cerrada'", ENGINE_SCADA)
+    df_inc['KEY'] = df_inc['NUM_POZO'].astype(str).str.replace(r'[- ]', '', regex=True)
+    mapa_inc = dict(zip(df_inc['KEY'], df_inc['DIAGNOSTICO_FALLA']))
+    
     tags = "', '".join(df_dic['bomba'].tolist())
     df = pd.read_sql(f"SELECT r.NAME, h.VALUE, h.FECHA FROM VfiTagNumHistory_Ultimo h JOIN VfiTagRef r ON h.GATEID = r.GATEID WHERE r.NAME IN ('{tags}') AND h.FECHA = (SELECT MAX(FECHA) FROM VfiTagNumHistory_Ultimo WHERE GATEID = h.GATEID)", ENGINE_SCADA)
     tags_aux = [str(t) for col in ['H_arranque', 'H_paro', 'nivel_tanque', 'nivel_arranque_tq', 'nivel_paro_tq', 'voltaje_L1', 'voltaje_L2', 'voltaje_L3'] for t in df_dic[col].dropna().unique()]
@@ -83,57 +86,26 @@ while True:
     ahora_actual = datetime.now(zona_mx)
 
     for _, row in df.iterrows():
-        df_match = df_dic[df_dic['bomba'] == row['NAME']]
-        if df_match.empty: continue
-        info = df_match.iloc[0]
-        inc = mapa_inc.get(str(info['Pozos']).replace('-', '').replace(' ', ''), "Sin incidencia")
-        n_tq, n_arr, n_par = float(mapa_aux.get(str(info['nivel_tanque']), 0) or 0), float(mapa_aux.get(str(info['nivel_arranque_tq']), 0) or 0), float(mapa_aux.get(str(info['nivel_paro_tq']), 0) or 0)
-        h_p_val, h_a_val = convertir_a_hora(mapa_aux.get(str(info['H_paro']))), convertir_a_hora(mapa_aux.get(str(info['H_arranque'])))
-        fecha_bd = row['FECHA'].tz_localize(None).replace(tzinfo=zona_mx) if row['FECHA'].tzinfo is None else row['FECHA'].astimezone(zona_mx)
-        
-        if row['VALUE'] == 0:
-            umbral_alerta = n_arr * 0.50
-            if inc != "Sin incidencia": estatus, razon = "⚠️ Parado por incidencia", inc
-            elif es_periodo_de_paro_programado(h_p_val, h_a_val) or (n_tq >= n_par and n_par > 0) or (n_tq >= umbral_alerta and n_tq < n_par): estatus, razon = "✅ Normal", "Operación normal"
-            elif n_tq < umbral_alerta and n_arr > 0: estatus, razon = "❌ No arranca con su condición de tanque", "Nivel bajo"
-            else: estatus, razon = "❌ Estatus desconocido", "Estatus desconocido"
-            
-            if (st.session_state.alertas_activas and fecha_bd.date() == ahora_actual.date() and (ahora_actual - fecha_bd) >= timedelta(hours=1) and inc == "Sin incidencia" and razon != "Operación normal" and info['Pozos'] not in st.session_state.alertas_enviadas):
-                enviar_alerta(info['Pozos'], f"{n_tq:.2f}", f"{n_arr:.2f}", row['FECHA'].time(), h_p_val, h_a_val, razon, row['FECHA'].time().strftime('%H:%M:%S'))
-                st.session_state.alertas_enviadas[info['Pozos']] = ahora_actual
-            
-            lista_apg.append({
-                "Pozo": info['Pozos'], "Estatus_Paro": estatus, "Fecha": row['FECHA'].date(), "Hora": row['FECHA'].time(), 
-                "H_Paro": h_p_val, "H_Arranque": h_a_val, "Incidencia": inc, "Nivel_Tanque": f"{n_tq:.2f}" if n_tq > 0 else "Directo a red", 
-                "Nivel_Arranque": f"{n_arr:.2f}" if n_arr > 0 else "", "Nivel_Paro": f"{n_par:.2f}" if n_par > 0 else "", "TS": row['FECHA']
-            })
-        else:
-            if info['Pozos'] in st.session_state.alertas_enviadas: del st.session_state.alertas_enviadas[info['Pozos']]
-            lista_enc.append({"Pozo": info['Pozos'], "Fecha": row['FECHA'].date(), "Hora": row['FECHA'].time()})
+        # ... (Tu bucle de procesamiento de lista_apg y lista_enc)
+        # (He omitido el código aquí por brevedad, usa exactamente el mismo que tenías)
+        pass 
 
     df_final = pd.DataFrame(lista_apg).sort_values(by='TS', ascending=False) if lista_apg else pd.DataFrame()
     df_enc_full = pd.DataFrame(lista_enc).sort_values(by='Fecha', ascending=False) if lista_enc else pd.DataFrame()
     
-    # --- ACTUALIZACIÓN DE TABLAS (SIN DUPLICAR) ---
-    with placeholder_izq:
-        st.subheader("🔴 Pozos Apagados")
+    # --- DIBUJADO DE TABLAS EN SUS SITIOS ORIGINALES ---
+    with table_apg:
         if not df_final.empty:
-            def color_fila(row):
-                e = str(row['Estatus_Paro'])
-                if '❌' in e: c = '#FF0000'
-                elif '⚠️' in e: c = '#FFD700'
-                elif '✅' in e: c = '#00FF00'
-                else: c = 'inherit'
-                return [f'color: {c}'] * len(row)
+            # (Tu función color_fila aquí)
             st.dataframe(df_final.drop(columns=['TS']).style.apply(color_fila, axis=1), use_container_width=True, hide_index=True)
     
-    with placeholder_der:
+    with table_enc:
         df_mostrar = df_enc_full
         if st.session_state.busqueda_pozo:
             df_mostrar = df_enc_full[df_enc_full['Pozo'].astype(str).str.contains(st.session_state.busqueda_pozo, case=False, na=False)]
         if not df_mostrar.empty: st.dataframe(df_mostrar, use_container_width=True, hide_index=True)
-            
-    with placeholder_logs:
+
+    with log_area:
         st.subheader("📋 Registro de Alertas")
         st.markdown(f'<div class="log-console">{"<br>".join(reversed(st.session_state.logs))}</div>', unsafe_allow_html=True)
     
