@@ -58,7 +58,7 @@ with col_h1:
     st.markdown("""
         <style>
         .logo-miaa {
-            width: 300px !important; /* Ajusta este valor al tamaño que quieras */
+            width: 000px !important; /* Ajusta este valor al tamaño que quieras */
             max-width: 100%;
             height: auto;
         }
