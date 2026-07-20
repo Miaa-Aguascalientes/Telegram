@@ -14,6 +14,7 @@ st.set_page_config(layout="wide", page_title="Sistema de monitoreo", page_icon="
 if 'alertas_enviadas' not in st.session_state: st.session_state.alertas_enviadas = {}
 if 'logs' not in st.session_state: st.session_state.logs = []
 if 'alertas_activas' not in st.session_state: st.session_state.alertas_activas = False
+if 'busqueda_pozo' not in st.session_state: st.session_state.busqueda_pozo = ""
 
 zona_mx = ZoneInfo("America/Mexico_City")
 
@@ -24,7 +25,7 @@ def es_periodo_de_paro_programado(t_par, t_arr):
     if t_par < t_arr: return t_par <= ahora <= t_arr
     else: return ahora >= t_par or ahora <= t_arr
 
-def enviar_alerta(pozo, nivel, nivel_arr, hora, h_paro, h_arranque, razon, hora_paro):
+def enviar_alerta(pozo, nivel, nivel_arr, hora_alerta, h_paro, h_arranque, razon, hora_paro):
     token = st.secrets["telegram"]["token"]
     mensaje = f"📢 <b>Reporte Automatico Miaa</b>\n________________________________\n⚠️ <b>Alerta:</b> Bomba Apagada\n📍 <b>Pozo:</b> {pozo}\n⏳ <b>Hora del paro:</b> {hora_paro}\n💧 <b>Nivel Tanque:</b> {nivel} mts.\n↕️ <b>Nivel Arranque con TQ:</b> {nivel_arr} mts.\n⏲️ <b>Horario de Op:</b> {h_paro} - {h_arranque}\n🔍 <b>Motivo:</b> {razon}"
     def send():
@@ -50,11 +51,19 @@ def convertir_a_hora(valor):
 col_h1, col_h2 = st.columns([1, 10])
 with col_h1: st.image("https://raw.githubusercontent.com/Miaa-Aguascalientes/Logos/38504978c8f77a4dac38ad476f74dbdee6af2cad/LogoMIAA.svg", width=150)
 with col_h2: st.markdown('<h1 class="custom-title">Sistema de Monitoreo</h1>', unsafe_allow_html=True)
-st.divider()    
 
-st.toggle("Activar envío de alertas a Telegram", key="alertas_activas") 
+st.divider()
+
+# --- CONTROLES ALINEADOS ---
+c1, c2 = st.columns([0.3, 0.7])
+with c1:
+    st.write("###") # Ajuste visual
+    st.toggle("Activar envío de alertas a Telegram", key="alertas_activas") 
+with c2:
+    st.text_input("🔍 Buscar pozo...", key='busqueda_pozo')
 
 placeholder = st.empty()
+
 while True:
     with placeholder.container():
         df_dic = pd.read_sql("SELECT * FROM Diccionario_de_pozos WHERE bomba != 'Sin telemetria'", ENGINE_DIC)
@@ -119,15 +128,11 @@ while True:
                     else: c = 'inherit'
                     return [f'color: {c}'] * len(row)
                 st.dataframe(df_final.drop(columns=['TS']).style.apply(color_fila, axis=1).set_properties(**{'text-align': 'center'}), use_container_width=True, hide_index=True)
-        
         with col_der: 
             st.subheader("🟢 Pozos Encendidos")
-            # --- BUSCADOR ---
-            query = st.text_input("🔍 Buscar pozo...", "")
             df_mostrar = df_enc_full
-            if query:
-                df_mostrar = df_enc_full[df_enc_full['Pozo'].str.contains(query, case=False, na=False)]
-            
+            if st.session_state.busqueda_pozo:
+                df_mostrar = df_enc_full[df_enc_full['Pozo'].astype(str).str.contains(st.session_state.busqueda_pozo, case=False, na=False)]
             if not df_mostrar.empty: st.dataframe(df_mostrar, use_container_width=True, hide_index=True)
             
         st.subheader("📋 Registro de Alertas")
