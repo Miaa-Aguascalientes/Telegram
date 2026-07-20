@@ -8,7 +8,7 @@ import requests
 from zoneinfo import ZoneInfo
 
 # Configuración de página
-st.set_page_config(layout="wide", page_title="Sistema de monitoreo", page_icon="https://www.miaa.mx/favicon.ico")
+st.set_page_config(layout="wide", page_title="Consola de operacón", page_icon="https://www.miaa.mx/favicon.ico")
 
 # --- ESTADO DE SESIÓN ---
 if 'alertas_enviadas' not in st.session_state: st.session_state.alertas_enviadas = {}
