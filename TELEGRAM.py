@@ -83,41 +83,17 @@ while True:
             fecha_bd = row['FECHA'].tz_localize(None).replace(tzinfo=zona_mx) if row['FECHA'].tzinfo is None else row['FECHA'].astimezone(zona_mx)
             
             if row['VALUE'] == 0:
-                # --- 1. Definición de parámetros ---
                 umbral_alerta = n_arr * 0.50
+                if inc != "Sin incidencia": estatus, razon = "⚠️ Parado por incidencia", inc
+                elif es_periodo_de_paro_programado(h_p_val, h_a_val) or (n_tq >= n_par and n_par > 0) or (n_tq >= umbral_alerta and n_tq < n_par): estatus, razon = "✅ Normal", "Operación normal"
+                elif n_tq < umbral_alerta and n_arr > 0: estatus, razon = "No arranca con su condición de tanque", "Nivel bajo"
+                else: estatus, razon = "❌ Desconocida", "Estatus desconocido"
                 
-                # --- 2. Clasificación del estado (Prioridades) ---
-                if inc != "Sin incidencia":
-                    estatus, razon = "⚠️ Parado por incidencia", inc
-                
-                elif es_periodo_de_paro_programado(h_p_val, h_a_val) or (n_tq >= n_par and n_par > 0) or (n_tq >= umbral_alerta and n_tq < n_par):
-                    estatus, razon = "✅ Normal", "Operación normal"
-                
-                elif n_tq < umbral_alerta and n_arr > 0:
-                    estatus, razon = "No arranca con su condición de tanque", "Nivel bajo"
-                
-                else:
-                    estatus, razon = "❌ Desconocida", "Estatus desconocido"
-                
-                es_alerta_activa = st.session_state.alertas_activas
-                es_del_dia_actual = fecha_bd.date() == ahora_actual.date()
-                ha_pasado_una_hora = (ahora_actual - fecha_bd) >= timedelta(hours=1)
-                pozo_sin_incidencia = (inc == "Sin incidencia")
-                es_anomalia = (razon != "Operación normal")
-                alerta_no_enviada_previamente = (info['Pozos'] not in st.session_state.alertas_enviadas)
-
-                # Ejecución del envío si se cumplen todas las reglas
-                if (es_alerta_activa and 
-                    es_del_dia_actual and 
-                    ha_pasado_una_hora and 
-                    pozo_sin_incidencia and 
-                    es_anomalia and 
-                    alerta_no_enviada_previamente):
-                    
-                    enviar_alerta(
-                        info['Pozos'], f"{n_tq:.2f}", f"{n_arr:.2f}", 
-                        row['FECHA'].time(), h_p_val, h_a_val, razon
-                    )
+                if (st.session_state.alertas_activas and fecha_bd.date() == ahora_actual.date() and 
+                    (ahora_actual - fecha_bd) >= timedelta(hours=1) and 
+                    inc == "Sin incidencia" and razon != "Operación normal" and 
+                    info['Pozos'] not in st.session_state.alertas_enviadas):
+                    enviar_alerta(info['Pozos'], f"{n_tq:.2f}", f"{n_arr:.2f}", row['FECHA'].time(), h_p_val, h_a_val, razon)
                     st.session_state.alertas_enviadas[info['Pozos']] = ahora_actual
                 
                 lista_apg.append({
