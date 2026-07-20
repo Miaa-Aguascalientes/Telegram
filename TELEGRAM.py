@@ -85,7 +85,7 @@ while True:
                 umbral_alerta = n_arr * 0.50
                 if inc != "Sin incidencia": estatus, razon = "⚠️ Parado por incidencia", inc
                 elif es_periodo_de_paro_programado(h_p_val, h_a_val) or (n_tq >= n_par and n_par > 0) or (n_tq >= umbral_alerta and n_tq < n_par): estatus, razon = "✅ Normal", "Operación normal"
-                elif n_tq < umbral_alerta and n_arr > 0: estatus, razon = "No arranca con su condición de tanque", "Nivel bajo"
+                elif n_tq < umbral_alerta and n_arr > 0: estatus, razon = "❌ No arranca con su condición de tanque", "Nivel bajo"
                 else: estatus, razon = "❌ Desconocida", "Estatus desconocido"
                 
                 if (st.session_state.alertas_activas and fecha_bd.date() == ahora_actual.date() and (ahora_actual - fecha_bd) >= timedelta(hours=1) and inc == "Sin incidencia" and razon != "Operación normal" and info['Pozos'] not in st.session_state.alertas_enviadas):
