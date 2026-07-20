@@ -51,7 +51,6 @@ col_h1, col_h2 = st.columns([1, 10])
 with col_h1: st.image("https://raw.githubusercontent.com/Miaa-Aguascalientes/Logos/38504978c8f77a4dac38ad476f74dbdee6af2cad/LogoMIAA.svg", width=150)
 with col_h2: st.markdown('<h1 class="custom-title">Sistema de Monitoreo</h1>', unsafe_allow_html=True)
 
-# Toggle fuera del bucle
 st.toggle("Activar envío de alertas a Telegram", key="alertas_activas") 
 
 placeholder = st.empty()
@@ -110,7 +109,16 @@ while True:
         col_izq, col_der = st.columns([0.65, 0.35])
         with col_izq: 
             st.subheader("🔴 Pozos Apagados")
-            if not df_final.empty: st.dataframe(df_final.drop(columns=['TS']).style.apply(lambda r: [f'color: {"#FFD700" if "⚠️" in str(r["Estatus_Paro"]) else ("#00FF00" if "✅" in str(r["Estatus_Paro"]) else ("#FF0000" if "❌" in str(r["Estatus_Paro"]) else "inherit"))}'] * len(r), axis=1).set_properties(**{'text-align': 'center'}), use_container_width=True, hide_index=True)
+            if not df_final.empty:
+                def color_fila(row):
+                    e = str(row['Estatus_Paro'])
+                    if "No arranca con su condición de tanque" in e: c = '#FF0000'
+                    elif '⚠️' in e: c = '#FFD700'
+                    elif '✅' in e: c = '#00FF00'
+                    elif '❌' in e: c = '#FF0000'
+                    else: c = 'inherit'
+                    return [f'color: {c}'] * len(row)
+                st.dataframe(df_final.drop(columns=['TS']).style.apply(color_fila, axis=1).set_properties(**{'text-align': 'center'}), use_container_width=True, hide_index=True)
         with col_der: 
             st.subheader("🟢 Pozos Encendidos")
             if not df_enc_full.empty: st.dataframe(df_enc_full, use_container_width=True, hide_index=True)
