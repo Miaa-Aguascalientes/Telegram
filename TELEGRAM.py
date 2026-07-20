@@ -53,18 +53,22 @@ with col_h1: st.image("https://raw.githubusercontent.com/Miaa-Aguascalientes/Log
 with col_h2: st.markdown('<h1 class="custom-title">Sistema de Monitoreo</h1>', unsafe_allow_html=True)
 st.divider()
 
-st.toggle("Activar envío de alertas a Telegram", key="alertas_activas") 
+# --- FILA ALINEADA: TOGGLE Y BUSCADOR ---
+c1, c2 = st.columns([0.3, 0.7])
+with c1:
+    st.write("###") # Compensación visual para alinear con el buscador
+    st.toggle("Activar envío de alertas a Telegram", key="alertas_activas") 
+with c2:
+    st.text_input("🔍 Buscar pozo (solo encendidos)...", key='busqueda_pozo')
 
 # --- ESTRUCTURA ---
 col_izq, col_der = st.columns([0.65, 0.35])
 
-# Placeholders para que el bucle actualice las tablas en su lugar
 with col_izq:
     st.subheader("🔴 Pozos Apagados")
     placeholder_apg = st.empty()
 
 with col_der:
-    st.text_input("🔍 Buscar pozo...", key='busqueda_pozo')
     st.subheader("🟢 Pozos Encendidos")
     placeholder_enc = st.empty()
 
@@ -122,7 +126,6 @@ while True:
     df_final = pd.DataFrame(lista_apg).sort_values(by='TS', ascending=False) if lista_apg else pd.DataFrame()
     df_enc_full = pd.DataFrame(lista_enc).sort_values(by='Fecha', ascending=False) if lista_enc else pd.DataFrame()
     
-    # Actualización en los placeholders
     with placeholder_apg:
         if not df_final.empty:
             def color_fila(row):
