@@ -51,90 +51,94 @@ def convertir_a_hora(valor):
 col_h1, col_h2 = st.columns([1, 10])
 with col_h1: st.image("https://raw.githubusercontent.com/Miaa-Aguascalientes/Logos/38504978c8f77a4dac38ad476f74dbdee6af2cad/LogoMIAA.svg", width=150)
 with col_h2: st.markdown('<h1 class="custom-title">Sistema de Monitoreo</h1>', unsafe_allow_html=True)
-
 st.divider()
 
-# --- CONTROLES ALINEADOS ---
-c1, c2 = st.columns([0.3, 0.7])
-with c1:
-    st.write("###") # Ajuste visual
-    st.toggle("Activar envío de alertas a Telegram", key="alertas_activas") 
-with c2:
+st.toggle("Activar envío de alertas a Telegram", key="alertas_activas") 
+
+# --- ESTRUCTURA ---
+col_izq, col_der = st.columns([0.65, 0.35])
+
+# Placeholders para que el bucle actualice las tablas en su lugar
+with col_izq:
+    st.subheader("🔴 Pozos Apagados")
+    placeholder_apg = st.empty()
+
+with col_der:
     st.text_input("🔍 Buscar pozo...", key='busqueda_pozo')
+    st.subheader("🟢 Pozos Encendidos")
+    placeholder_enc = st.empty()
 
-placeholder = st.empty()
+placeholder_logs = st.empty()
 
+# --- BUCLE PRINCIPAL ---
 while True:
-    with placeholder.container():
-        df_dic = pd.read_sql("SELECT * FROM Diccionario_de_pozos WHERE bomba != 'Sin telemetria'", ENGINE_DIC)
-        try:
-            df_inc = pd.read_sql("SELECT NUM_POZO, DIAGNOSTICO_FALLA FROM vw_incidencias_en_pozos WHERE ESTATUS != 'Cerrada'", ENGINE_SCADA)
-            df_inc['KEY'] = df_inc['NUM_POZO'].astype(str).str.replace(r'[- ]', '', regex=True)
-            mapa_inc = dict(zip(df_inc['KEY'], df_inc['DIAGNOSTICO_FALLA']))
-        except: mapa_inc = {}
+    df_dic = pd.read_sql("SELECT * FROM Diccionario_de_pozos WHERE bomba != 'Sin telemetria'", ENGINE_DIC)
+    try:
+        df_inc = pd.read_sql("SELECT NUM_POZO, DIAGNOSTICO_FALLA FROM vw_incidencias_en_pozos WHERE ESTATUS != 'Cerrada'", ENGINE_SCADA)
+        df_inc['KEY'] = df_inc['NUM_POZO'].astype(str).str.replace(r'[- ]', '', regex=True)
+        mapa_inc = dict(zip(df_inc['KEY'], df_inc['DIAGNOSTICO_FALLA']))
+    except: mapa_inc = {}
 
-        tags = "', '".join(df_dic['bomba'].tolist())
-        df = pd.read_sql(f"SELECT r.NAME, h.VALUE, h.FECHA FROM VfiTagNumHistory_Ultimo h JOIN VfiTagRef r ON h.GATEID = r.GATEID WHERE r.NAME IN ('{tags}') AND h.FECHA = (SELECT MAX(FECHA) FROM VfiTagNumHistory_Ultimo WHERE GATEID = h.GATEID)", ENGINE_SCADA)
-        tags_aux = [str(t) for col in ['H_arranque', 'H_paro', 'nivel_tanque', 'nivel_arranque_tq', 'nivel_paro_tq', 'voltaje_L1', 'voltaje_L2', 'voltaje_L3'] for t in df_dic[col].dropna().unique()]
-        df_h = pd.read_sql(f"SELECT r.NAME, h.VALUE FROM VfiTagNumHistory_Ultimo h JOIN VfiTagRef r ON h.GATEID = r.GATEID WHERE r.NAME IN ('{"', '".join(tags_aux)}') AND h.FECHA = (SELECT MAX(FECHA) FROM VfiTagNumHistory_Ultimo WHERE GATEID = h.GATEID)", ENGINE_SCADA)
-        mapa_aux = dict(zip(df_h['NAME'].astype(str), df_h['VALUE']))
+    tags = "', '".join(df_dic['bomba'].tolist())
+    df = pd.read_sql(f"SELECT r.NAME, h.VALUE, h.FECHA FROM VfiTagNumHistory_Ultimo h JOIN VfiTagRef r ON h.GATEID = r.GATEID WHERE r.NAME IN ('{tags}') AND h.FECHA = (SELECT MAX(FECHA) FROM VfiTagNumHistory_Ultimo WHERE GATEID = h.GATEID)", ENGINE_SCADA)
+    tags_aux = [str(t) for col in ['H_arranque', 'H_paro', 'nivel_tanque', 'nivel_arranque_tq', 'nivel_paro_tq', 'voltaje_L1', 'voltaje_L2', 'voltaje_L3'] for t in df_dic[col].dropna().unique()]
+    df_h = pd.read_sql(f"SELECT r.NAME, h.VALUE FROM VfiTagNumHistory_Ultimo h JOIN VfiTagRef r ON h.GATEID = r.GATEID WHERE r.NAME IN ('{"', '".join(tags_aux)}') AND h.FECHA = (SELECT MAX(FECHA) FROM VfiTagNumHistory_Ultimo WHERE GATEID = h.GATEID)", ENGINE_SCADA)
+    mapa_aux = dict(zip(df_h['NAME'].astype(str), df_h['VALUE']))
 
-        lista_apg, lista_enc = [], []
-        ahora_actual = datetime.now(zona_mx)
+    lista_apg, lista_enc = [], []
+    ahora_actual = datetime.now(zona_mx)
 
-        for _, row in df.iterrows():
-            df_match = df_dic[df_dic['bomba'] == row['NAME']]
-            if df_match.empty: continue
-            info = df_match.iloc[0]
-            inc = mapa_inc.get(str(info['Pozos']).replace('-', '').replace(' ', ''), "Sin incidencia")
-            n_tq, n_arr, n_par = float(mapa_aux.get(str(info['nivel_tanque']), 0) or 0), float(mapa_aux.get(str(info['nivel_arranque_tq']), 0) or 0), float(mapa_aux.get(str(info['nivel_paro_tq']), 0) or 0)
-            h_p_val, h_a_val = convertir_a_hora(mapa_aux.get(str(info['H_paro']))), convertir_a_hora(mapa_aux.get(str(info['H_arranque'])))
-            fecha_bd = row['FECHA'].tz_localize(None).replace(tzinfo=zona_mx) if row['FECHA'].tzinfo is None else row['FECHA'].astimezone(zona_mx)
-            
-            if row['VALUE'] == 0:
-                umbral_alerta = n_arr * 0.50
-                if inc != "Sin incidencia": estatus, razon = "⚠️ Parado por incidencia", inc
-                elif es_periodo_de_paro_programado(h_p_val, h_a_val) or (n_tq >= n_par and n_par > 0) or (n_tq >= umbral_alerta and n_tq < n_par): estatus, razon = "✅ Normal", "Operación normal"
-                elif n_tq < umbral_alerta and n_arr > 0: estatus, razon = "❌ No arranca con su condición de tanque", "Nivel bajo"
-                else: estatus, razon = "❌ Estatus desconocido", "Estatus desconocido"
-                
-                if (st.session_state.alertas_activas and fecha_bd.date() == ahora_actual.date() and (ahora_actual - fecha_bd) >= timedelta(hours=1) and inc == "Sin incidencia" and razon != "Operación normal" and info['Pozos'] not in st.session_state.alertas_enviadas):
-                    enviar_alerta(info['Pozos'], f"{n_tq:.2f}", f"{n_arr:.2f}", row['FECHA'].time(), h_p_val, h_a_val, razon, row['FECHA'].time().strftime('%H:%M:%S'))
-                    st.session_state.alertas_enviadas[info['Pozos']] = ahora_actual
-                
-                lista_apg.append({
-                    "Pozo": info['Pozos'], "Estatus_Paro": estatus, "Fecha": row['FECHA'].date(), "Hora": row['FECHA'].time(), 
-                    "H_Paro": h_p_val, "H_Arranque": h_a_val,
-                    "Incidencia": inc, "Nivel_Tanque": f"{n_tq:.2f}" if n_tq > 0 else "Directo a red", 
-                    "Nivel_Arranque": f"{n_arr:.2f}" if n_arr > 0 else "", "Nivel_Paro": f"{n_par:.2f}" if n_par > 0 else "", 
-                    "V_L1": f"{float(mapa_aux.get(str(info['voltaje_L1']), 0)):.2f}", "V_L2": f"{float(mapa_aux.get(str(info['voltaje_L2']), 0)):.2f}", "V_L3": f"{float(mapa_aux.get(str(info['voltaje_L3']), 0)):.2f}", "TS": row['FECHA']
-                })
-            else:
-                if info['Pozos'] in st.session_state.alertas_enviadas: del st.session_state.alertas_enviadas[info['Pozos']]
-                lista_enc.append({"Pozo": info['Pozos'], "Fecha": row['FECHA'].date(), "Hora": row['FECHA'].time()})
-
-        df_final = pd.DataFrame(lista_apg).sort_values(by='TS', ascending=False) if lista_apg else pd.DataFrame()
-        df_enc_full = pd.DataFrame(lista_enc).sort_values(by='Fecha', ascending=False) if lista_enc else pd.DataFrame()
+    for _, row in df.iterrows():
+        df_match = df_dic[df_dic['bomba'] == row['NAME']]
+        if df_match.empty: continue
+        info = df_match.iloc[0]
+        inc = mapa_inc.get(str(info['Pozos']).replace('-', '').replace(' ', ''), "Sin incidencia")
+        n_tq, n_arr, n_par = float(mapa_aux.get(str(info['nivel_tanque']), 0) or 0), float(mapa_aux.get(str(info['nivel_arranque_tq']), 0) or 0), float(mapa_aux.get(str(info['nivel_paro_tq']), 0) or 0)
+        h_p_val, h_a_val = convertir_a_hora(mapa_aux.get(str(info['H_paro']))), convertir_a_hora(mapa_aux.get(str(info['H_arranque'])))
+        fecha_bd = row['FECHA'].tz_localize(None).replace(tzinfo=zona_mx) if row['FECHA'].tzinfo is None else row['FECHA'].astimezone(zona_mx)
         
-        col_izq, col_der = st.columns([0.65, 0.35])
-        with col_izq: 
-            st.subheader("🔴 Pozos Apagados")
-            if not df_final.empty:
-                def color_fila(row):
-                    e = str(row['Estatus_Paro'])
-                    if '❌' in e: c = '#FF0000'
-                    elif '⚠️' in e: c = '#FFD700'
-                    elif '✅' in e: c = '#00FF00'
-                    else: c = 'inherit'
-                    return [f'color: {c}'] * len(row)
-                st.dataframe(df_final.drop(columns=['TS']).style.apply(color_fila, axis=1).set_properties(**{'text-align': 'center'}), use_container_width=True, hide_index=True)
-        with col_der: 
-            st.subheader("🟢 Pozos Encendidos")
-            df_mostrar = df_enc_full
-            if st.session_state.busqueda_pozo:
-                df_mostrar = df_enc_full[df_enc_full['Pozo'].astype(str).str.contains(st.session_state.busqueda_pozo, case=False, na=False)]
-            if not df_mostrar.empty: st.dataframe(df_mostrar, use_container_width=True, hide_index=True)
+        if row['VALUE'] == 0:
+            umbral_alerta = n_arr * 0.50
+            if inc != "Sin incidencia": estatus, razon = "⚠️ Parado por incidencia", inc
+            elif es_periodo_de_paro_programado(h_p_val, h_a_val) or (n_tq >= n_par and n_par > 0) or (n_tq >= umbral_alerta and n_tq < n_par): estatus, razon = "✅ Normal", "Operación normal"
+            elif n_tq < umbral_alerta and n_arr > 0: estatus, razon = "❌ No arranca con su condición de tanque", "Nivel bajo"
+            else: estatus, razon = "❌ Estatus desconocido", "Estatus desconocido"
             
+            if (st.session_state.alertas_activas and fecha_bd.date() == ahora_actual.date() and (ahora_actual - fecha_bd) >= timedelta(hours=1) and inc == "Sin incidencia" and razon != "Operación normal" and info['Pozos'] not in st.session_state.alertas_enviadas):
+                enviar_alerta(info['Pozos'], f"{n_tq:.2f}", f"{n_arr:.2f}", row['FECHA'].time(), h_p_val, h_a_val, razon, row['FECHA'].time().strftime('%H:%M:%S'))
+                st.session_state.alertas_enviadas[info['Pozos']] = ahora_actual
+            
+            lista_apg.append({
+                "Pozo": info['Pozos'], "Estatus_Paro": estatus, "Fecha": row['FECHA'].date(), "Hora": row['FECHA'].time(), 
+                "H_Paro": h_p_val, "H_Arranque": h_a_val,
+                "Incidencia": inc, "Nivel_Tanque": f"{n_tq:.2f}" if n_tq > 0 else "Directo a red", 
+                "Nivel_Arranque": f"{n_arr:.2f}" if n_arr > 0 else "", "Nivel_Paro": f"{n_par:.2f}" if n_par > 0 else "", 
+                "V_L1": f"{float(mapa_aux.get(str(info['voltaje_L1']), 0)):.2f}", "V_L2": f"{float(mapa_aux.get(str(info['voltaje_L2']), 0)):.2f}", "V_L3": f"{float(mapa_aux.get(str(info['voltaje_L3']), 0)):.2f}", "TS": row['FECHA']
+            })
+        else:
+            if info['Pozos'] in st.session_state.alertas_enviadas: del st.session_state.alertas_enviadas[info['Pozos']]
+            lista_enc.append({"Pozo": info['Pozos'], "Fecha": row['FECHA'].date(), "Hora": row['FECHA'].time()})
+
+    df_final = pd.DataFrame(lista_apg).sort_values(by='TS', ascending=False) if lista_apg else pd.DataFrame()
+    df_enc_full = pd.DataFrame(lista_enc).sort_values(by='Fecha', ascending=False) if lista_enc else pd.DataFrame()
+    
+    # Actualización en los placeholders
+    with placeholder_apg:
+        if not df_final.empty:
+            def color_fila(row):
+                e = str(row['Estatus_Paro'])
+                c = '#FF0000' if '❌' in e else '#FFD700' if '⚠️' in e else '#00FF00' if '✅' in e else 'inherit'
+                return [f'color: {c}'] * len(row)
+            st.dataframe(df_final.drop(columns=['TS']).style.apply(color_fila, axis=1).set_properties(**{'text-align': 'center'}), use_container_width=True, hide_index=True)
+    
+    with placeholder_enc:
+        df_mostrar = df_enc_full
+        if st.session_state.busqueda_pozo:
+            df_mostrar = df_enc_full[df_enc_full['Pozo'].astype(str).str.contains(st.session_state.busqueda_pozo, case=False, na=False)]
+        if not df_mostrar.empty: st.dataframe(df_mostrar, use_container_width=True, hide_index=True)
+            
+    with placeholder_logs:
         st.subheader("📋 Registro de Alertas")
         st.markdown(f'<div class="log-console">{"<br>".join(reversed(st.session_state.logs))}</div>', unsafe_allow_html=True)
+    
     t.sleep(30)
