@@ -76,21 +76,27 @@ while True:
             info = df_match.iloc[0]
             inc = mapa_inc.get(str(info['Pozos']).replace('-', '').replace(' ', ''), "Sin incidencia")
             n_tq, n_arr, n_par = float(mapa_aux.get(str(info['nivel_tanque']), 0) or 0), float(mapa_aux.get(str(info['nivel_arranque_tq']), 0) or 0), float(mapa_aux.get(str(info['nivel_paro_tq']), 0) or 0)
+            h_p_val, h_a_val = convertir_a_hora(mapa_aux.get(str(info['H_paro']))), convertir_a_hora(mapa_aux.get(str(info['H_arranque'])))
             fecha_bd = row['FECHA'].tz_localize(None).replace(tzinfo=zona_mx) if row['FECHA'].tzinfo is None else row['FECHA'].astimezone(zona_mx)
             
             if row['VALUE'] == 0:
-                # LÓGICA DE UMBRAL: Se activa si el nivel cae por debajo del 50% del nivel de arranque
                 umbral_alerta = n_arr * 0.50
                 if inc != "Sin incidencia": estatus, razon = "⚠️ Parado por incidencia", inc
-                elif es_periodo_de_paro_programado(convertir_a_hora(mapa_aux.get(str(info['H_paro']))), convertir_a_hora(mapa_aux.get(str(info['H_arranque'])))) or (n_tq >= n_par and n_par > 0) or (n_tq >= umbral_alerta and n_tq < n_par): estatus, razon = "✅ Normal", "Operación normal"
+                elif es_periodo_de_paro_programado(h_p_val, h_a_val) or (n_tq >= n_par and n_par > 0) or (n_tq >= umbral_alerta and n_tq < n_par): estatus, razon = "✅ Normal", "Operación normal"
                 elif n_tq < umbral_alerta and n_arr > 0: estatus, razon = "No arranca con su condición de tanque", "Nivel bajo"
                 else: estatus, razon = "❌ Desconocida", "Estatus desconocido"
                 
                 if (st.session_state.alertas_activas and fecha_bd.date() == ahora_actual.date() and (ahora_actual - fecha_bd) >= timedelta(hours=1) and inc == "Sin incidencia" and razon != "Operación normal" and info['Pozos'] not in st.session_state.alertas_enviadas):
-                    enviar_alerta(info['Pozos'], f"{n_tq:.2f}", f"{n_arr:.2f}", row['FECHA'].time(), convertir_a_hora(mapa_aux.get(str(info['H_paro']))), convertir_a_hora(mapa_aux.get(str(info['H_arranque']))), razon)
+                    enviar_alerta(info['Pozos'], f"{n_tq:.2f}", f"{n_arr:.2f}", row['FECHA'].time(), h_p_val, h_a_val, razon)
                     st.session_state.alertas_enviadas[info['Pozos']] = ahora_actual
                 
-                lista_apg.append({"Pozo": info['Pozos'], "Estatus_Paro": estatus, "Fecha": row['FECHA'].date(), "Hora": row['FECHA'].time(), "Incidencia": inc, "Nivel_Tanque": f"{n_tq:.2f}" if n_tq > 0 else "Directo a red", "Nivel_Arranque": f"{n_arr:.2f}" if n_arr > 0 else "", "Nivel_Paro": f"{n_par:.2f}" if n_par > 0 else "", "V_L1": f"{float(mapa_aux.get(str(info['voltaje_L1']), 0)):.2f}", "V_L2": f"{float(mapa_aux.get(str(info['voltaje_L2']), 0)):.2f}", "V_L3": f"{float(mapa_aux.get(str(info['voltaje_L3']), 0)):.2f}", "TS": row['FECHA']})
+                lista_apg.append({
+                    "Pozo": info['Pozos'], "Estatus_Paro": estatus, "Fecha": row['FECHA'].date(), "Hora": row['FECHA'].time(), 
+                    "H_Paro": h_p_val, "H_Arranque": h_a_val, # Restauradas
+                    "Incidencia": inc, "Nivel_Tanque": f"{n_tq:.2f}" if n_tq > 0 else "Directo a red", 
+                    "Nivel_Arranque": f"{n_arr:.2f}" if n_arr > 0 else "", "Nivel_Paro": f"{n_par:.2f}" if n_par > 0 else "", 
+                    "V_L1": f"{float(mapa_aux.get(str(info['voltaje_L1']), 0)):.2f}", "V_L2": f"{float(mapa_aux.get(str(info['voltaje_L2']), 0)):.2f}", "V_L3": f"{float(mapa_aux.get(str(info['voltaje_L3']), 0)):.2f}", "TS": row['FECHA']
+                })
             else:
                 if info['Pozos'] in st.session_state.alertas_enviadas: del st.session_state.alertas_enviadas[info['Pozos']]
                 lista_enc.append({"Pozo": info['Pozos'], "Fecha": row['FECHA'].date(), "Hora": row['FECHA'].time()})
@@ -101,7 +107,7 @@ while True:
         col_izq, col_der = st.columns([0.65, 0.35])
         with col_izq: 
             st.subheader("🔴 Pozos Apagados")
-            if not df_final.empty: st.dataframe(df_final.drop(columns=['TS']).style.apply(lambda r: [f'color: {"#FFD700" if "⚠️" in str(r["Estatus_Paro"]) else ("#00FF00" if "✅" in str(r["Estatus_Paro"]) else ("#FF0000" if "❌" in str(r["Estatus_Paro"]) else "inherit"))}'] * len(r), axis=1).set_properties(**{'text-align': 'center'}, subset=['Nivel_Tanque', 'Nivel_Arranque', 'Nivel_Paro', 'V_L1', 'V_L2', 'V_L3']), use_container_width=True, hide_index=True)
+            if not df_final.empty: st.dataframe(df_final.drop(columns=['TS']).style.apply(lambda r: [f'color: {"#FFD700" if "⚠️" in str(r["Estatus_Paro"]) else ("#00FF00" if "✅" in str(r["Estatus_Paro"]) else ("#FF0000" if "❌" in str(r["Estatus_Paro"]) else "inherit"))}'] * len(r), axis=1).set_properties(**{'text-align': 'center'}), use_container_width=True, hide_index=True)
         with col_der: 
             st.subheader("🟢 Pozos Encendidos")
             if not df_enc_full.empty: st.dataframe(df_enc_full, use_container_width=True, hide_index=True)
