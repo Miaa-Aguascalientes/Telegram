@@ -35,7 +35,7 @@ def enviar_alerta(pozo, nivel, nivel_arr, hora, h_paro, h_arranque, razon):
     threading.Thread(target=send, daemon=True).start()
     st.session_state.logs.append(f"[{datetime.now(zona_mx).strftime('%H:%M:%S')}] Alerta enviada: {pozo} - {razon}")
 
-# --- CSS Y MOTORES ---
+# --- CSS ---
 st.write("""<style>#MainMenu, header {visibility: hidden;} .block-container {padding-top: 0rem !important; padding-bottom: 0rem !important;} .custom-title {color: #00E5FF !important; font-size: 2rem; font-weight: bold; margin-bottom: 0px; text-align: center; margin-top: 0px;} .log-console {background-color: #0e1117; color: #00FF00; font-family: monospace; padding: 10px; border: 1px solid #003366; border-radius: 5px; height: 150px; overflow-y: scroll; font-size: 0.85rem;}</style>""", unsafe_allow_html=True)
 
 @st.cache_resource
@@ -50,6 +50,9 @@ def convertir_a_hora(valor):
 col_h1, col_h2 = st.columns([1, 10])
 with col_h1: st.image("https://raw.githubusercontent.com/Miaa-Aguascalientes/Logos/38504978c8f77a4dac38ad476f74dbdee6af2cad/LogoMIAA.svg", width=150)
 with col_h2: st.markdown('<h1 class="custom-title">Sistema de Monitoreo</h1>', unsafe_allow_html=True)
+
+# Toggle fuera del bucle
+st.toggle("Activar envío de alertas a Telegram", key="alertas_activas") 
 
 placeholder = st.empty()
 while True:
@@ -92,7 +95,7 @@ while True:
                 
                 lista_apg.append({
                     "Pozo": info['Pozos'], "Estatus_Paro": estatus, "Fecha": row['FECHA'].date(), "Hora": row['FECHA'].time(), 
-                    "H_Paro": h_p_val, "H_Arranque": h_a_val, # Restauradas
+                    "H_Paro": h_p_val, "H_Arranque": h_a_val,
                     "Incidencia": inc, "Nivel_Tanque": f"{n_tq:.2f}" if n_tq > 0 else "Directo a red", 
                     "Nivel_Arranque": f"{n_arr:.2f}" if n_arr > 0 else "", "Nivel_Paro": f"{n_par:.2f}" if n_par > 0 else "", 
                     "V_L1": f"{float(mapa_aux.get(str(info['voltaje_L1']), 0)):.2f}", "V_L2": f"{float(mapa_aux.get(str(info['voltaje_L2']), 0)):.2f}", "V_L3": f"{float(mapa_aux.get(str(info['voltaje_L3']), 0)):.2f}", "TS": row['FECHA']
@@ -112,8 +115,6 @@ while True:
             st.subheader("🟢 Pozos Encendidos")
             if not df_enc_full.empty: st.dataframe(df_enc_full, use_container_width=True, hide_index=True)
             
-        st.markdown("<hr>", unsafe_allow_html=True)
-        st.toggle("Activar envío de alertas a Telegram", key="alertas_activas") 
         st.subheader("📋 Registro de Alertas")
         st.markdown(f'<div class="log-console">{"<br>".join(reversed(st.session_state.logs))}</div>', unsafe_allow_html=True)
     t.sleep(30)
