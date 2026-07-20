@@ -76,7 +76,7 @@ with col_h1:
     """, unsafe_allow_html=True)
 
 with col_h2: 
-    st.markdown('<h1 class="custom-title">Sistema de Monitoreo</h1>', unsafe_allow_html=True)
+    st.markdown('<h1 class="custom-title">Consola de operación</h1>', unsafe_allow_html=True)
 st.divider()
 
 # --- FILA ALINEADA: TOGGLE Y BUSCADOR ---
