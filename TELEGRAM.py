@@ -65,10 +65,16 @@ def convertir_a_hora(valor):
     except: return time(0, 0)
 
 # --- CABECERA ---
-col_h1, col_h2 = st.columns([1, 10])
+col_h1, col_h2 = st.columns([2, 9]) # Le damos más espacio a la columna del logo
 with col_h1:
-    # Usamos un div contenedor con la clase logo-container para aplicar el CSS
-    st.markdown('<div class="logo-container"><img src="https://raw.githubusercontent.com/Miaa-Aguascalientes/Logos/38504978c8f77a4dac38ad476f74dbdee6af2cad/LogoMIAA.svg"></div>', unsafe_allow_html=True)
+    # Fuerza máxima: usamos un contenedor que impone el tamaño sí o sí
+    st.markdown("""
+        <div style="width: 400px;">
+            <img src="https://raw.githubusercontent.com/Miaa-Aguascalientes/Logos/38504978c8f77a4dac38ad476f74dbdee6af2cad/LogoMIAA.svg" 
+                 style="width: 100%; height: auto; display: block;">
+        </div>
+    """, unsafe_allow_html=True)
+
 with col_h2: 
     st.markdown('<h1 class="custom-title">Sistema de Monitoreo</h1>', unsafe_allow_html=True)
 st.divider()
