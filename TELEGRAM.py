@@ -32,7 +32,7 @@ def registrar_cambio_estado():
 
 def enviar_alerta(pozo, nivel, nivel_arr, hora_alerta, h_paro, h_arranque, razon, hora_paro):
     token = st.secrets["telegram"]["token"]
-    mensaje = f"📢 <b>Reporte Automatico Miaa</b>\n____________________________\n⚠️ <b>Alerta:</b> Bomba Apagada\n📍 <b>Pozo:</b> {pozo}\n⏳ <b>Hora del paro:</b> {hora_paro}\n💧 <b>Nivel Tanque:</b> {nivel} mts.\n↕️ <b>Nivel Arranque con TQ:</b> {nivel_arr} mts.\n⏲️ <b>Horario de Op:</b> {h_paro} - {h_arranque}\n🔍 <b>Motivo:</b> {razon}"
+    mensaje = f"📢 <b>Reporte Automatico Miaa</b>\n________________________________\n⚠️ <b>Alerta:</b> Bomba Apagada\n📍 <b>Pozo:</b> {pozo}\n⏳ <b>Hora del paro:</b> {hora_paro}\n💧 <b>Nivel Tanque:</b> {nivel} mts.\n↕️ <b>Nivel Arranque con TQ:</b> {nivel_arr} mts.\n⏲️ <b>Horario de Op:</b> {h_paro} - {h_arranque}\n🔍 <b>Motivo:</b> {razon}"
     def send():
         try:
             df_ids = pd.read_sql("SELECT chart_id FROM Diccionario_telegram WHERE activo = 'Si'", ENGINE_DIC)
@@ -126,20 +126,40 @@ while True:
         fecha_bd = row['FECHA'].tz_localize(None).replace(tzinfo=zona_mx) if row['FECHA'].tzinfo is None else row['FECHA'].astimezone(zona_mx)
         
         if row['VALUE'] == 0:
-            umbral_alerta = n_arr * 0.80
+            umbral_alerta = n_arr * 0.50
             if inc != "Sin incidencia": estatus, razon = "⚠️ Parado por incidencia", inc
             elif es_periodo_de_paro_programado(h_p_val, h_a_val) or (n_tq >= n_par and n_par > 0) or (n_tq >= umbral_alerta and n_tq < n_par): estatus, razon = "✅ Normal", "Operación normal"
             elif n_tq < umbral_alerta and n_arr > 0: estatus, razon = "❌ No arranca con su condición de tanque", "Nivel bajo"
             else: estatus, razon = "❌ Estatus desconocido", "Estatus desconocido"
             
-            if (st.session_state.alertas_activas and fecha_bd.date() == ahora_actual.date() and (ahora_actual - fecha_bd) >= timedelta(hours=3.5) and inc == "Sin incidencia" and razon != "Operación normal" and info['Pozos'] not in st.session_state.alertas_enviadas):
+            if (st.session_state.alertas_activas and fecha_bd.date() == ahora_actual.date() and (ahora_actual - fecha_bd) >= timedelta(hours=3) and inc == "Sin incidencia" and razon != "Operación normal" and info['Pozos'] not in st.session_state.alertas_enviadas):
                 enviar_alerta(info['Pozos'], f"{n_tq:.2f}", f"{n_arr:.2f}", row['FECHA'].time(), h_p_val, h_a_val, razon, row['FECHA'].time().strftime('%H:%M:%S'))
                 st.session_state.alertas_enviadas[info['Pozos']] = ahora_actual
             
-            lista_apg.append({"Pozo": info['Pozos'], "Estatus_Paro": estatus, "Fecha": row['FECHA'].date(), "Hora": row['FECHA'].time(), "H_Paro": h_p_val, "H_Arranque": h_a_val, "Incidencia": inc, "Nivel_Tanque": f"{n_tq:.2f}" if n_tq > 0 else "Directo a red", "Nivel_Arranque": f"{n_arr:.2f}" if n_arr > 0 else "", "Nivel_Paro": f"{n_par:.2f}" if n_par > 0 else "", "V_L1": f"{float(mapa_aux.get(str(info['voltaje_L1']), 0)):.2f}", "V_L2": f"{float(mapa_aux.get(str(info['voltaje_L2']), 0)):.2f}", "V_L3": f"{float(mapa_aux.get(str(info['voltaje_L3']), 0)):.2f}", "TS": row['FECHA']})
+            lista_apg.append({
+                "Pozo": info['Pozos'], 
+                "Estatus_Paro": estatus, 
+                "Fecha": row['FECHA'].date(), 
+                "Hora": row['FECHA'].strftime('%H:%M'), 
+                "H_Paro": h_p_val.strftime('%H:%M'), 
+                "H_Arranque": h_a_val.strftime('%H:%M'), 
+                "Incidencia": inc, 
+                "Nivel_Tanque": f"{n_tq:.2f}" if n_tq > 0 else "Directo a red", 
+                "Nivel_Arranque": f"{n_arr:.2f}" if n_arr > 0 else "", 
+                "Nivel_Paro": f"{n_par:.2f}" if n_par > 0 else "", 
+                "V_L1": f"{float(mapa_aux.get(str(info['voltaje_L1']), 0)):.2f}", 
+                "V_L2": f"{float(mapa_aux.get(str(info['voltaje_L2']), 0)):.2f}", 
+                "V_L3": f"{float(mapa_aux.get(str(info['voltaje_L3']), 0)):.2f}", 
+                "TS": row['FECHA']
+            })
         else:
             if info['Pozos'] in st.session_state.alertas_enviadas: del st.session_state.alertas_enviadas[info['Pozos']]
-            lista_enc.append({"Pozo": info['Pozos'], "Fecha": row['FECHA'].date(), "Hora": row['FECHA'].time(), "TS": row['FECHA']})
+            lista_enc.append({
+                "Pozo": info['Pozos'], 
+                "Fecha": row['FECHA'].date(), 
+                "Hora": row['FECHA'].strftime('%H:%M'), 
+                "TS": row['FECHA']
+            })
 
     df_final = pd.DataFrame(lista_apg).sort_values(by='TS', ascending=False) if lista_apg else pd.DataFrame()
     df_enc_full = pd.DataFrame(lista_enc).sort_values(by='TS', ascending=False) if lista_enc else pd.DataFrame()
