@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy.exc import SQLAlchemyError
 
 # Configuración de página
-st.set_page_config(layout="wide", page_title="Consola de operacón", page_icon="https://www.miaa.mx/favicon.ico")
+st.set_page_config(layout="wide", page_title="Consola de operación", page_icon="https://www.miaa.mx/favicon.ico")
 
 # --- ESTADO DE SESIÓN ---
 if 'alertas_enviadas' not in st.session_state: st.session_state.alertas_enviadas = {}
@@ -57,7 +57,6 @@ st.write("""<style>
     .custom-title {color: #00E5FF !important; font-size: 2rem; font-weight: bold; margin-bottom: 0px; text-align: center; margin-top: 0px;} 
     .log-console {background-color: #0e1117; color: #00FF00; font-family: monospace; padding: 10px; border: 1px solid #003366; border-radius: 5px; height: 150px; overflow-y: scroll; font-size: 0.85rem;}
     
-    /* Esta es la regla que forzará el tamaño del logo */
     .logo-container img {
         width: 300px !important; 
         height: auto !important;
@@ -68,8 +67,8 @@ st.write("""<style>
 @st.cache_resource
 def get_engines(): 
     return (
-        create_engine(st.secrets["databases"]["url_dic"], pool_pre_ping=True, pool_recycle=300, connect_args={"connect_timeout": 15}), 
-        create_engine(st.secrets["databases"]["url_scada"], pool_pre_ping=True, pool_recycle=300, connect_args={"connect_timeout": 15})
+        create_engine(st.secrets["databases"]["url_dic"], pool_pre_ping=True, pool_recycle=300, connect_args={"connect_timeout": 30, "read_timeout": 30, "write_timeout": 30}), 
+        create_engine(st.secrets["databases"]["url_scada"], pool_pre_ping=True, pool_recycle=300, connect_args={"connect_timeout": 30, "read_timeout": 30, "write_timeout": 30})
     )
 
 ENGINE_DIC, ENGINE_SCADA = get_engines()
@@ -79,9 +78,8 @@ def convertir_a_hora(valor):
     except: return time(0, 0)
 
 # --- CABECERA ---
-col_h1, col_h2 = st.columns([2, 9]) # Le damos más espacio a la columna del logo
+col_h1, col_h2 = st.columns([2, 9])
 with col_h1:
-    # Fuerza máxima: usamos un contenedor que impone el tamaño sí o sí
     st.markdown("""
         <div style="width: 250px;">
             <img src="https://raw.githubusercontent.com/Miaa-Aguascalientes/Logos/38504978c8f77a4dac38ad476f74dbdee6af2cad/LogoMIAA.svg" 
@@ -140,7 +138,11 @@ while True:
             inc = mapa_inc.get(str(info['Pozos']).replace('-', '').replace(' ', ''), "Sin incidencia")
             n_tq, n_arr, n_par = float(mapa_aux.get(str(info['nivel_tanque']), 0) or 0), float(mapa_aux.get(str(info['nivel_arranque_tq']), 0) or 0), float(mapa_aux.get(str(info['nivel_paro_tq']), 0) or 0)
             h_p_val, h_a_val = convertir_a_hora(mapa_aux.get(str(info['H_paro']))), convertir_a_hora(mapa_aux.get(str(info['H_arranque'])))
-            fecha_bd = row['FECHA'].tz_localize(None).replace(tzinfo=zona_mx) if row['FECHA'].tzinfo is None else row['FECHA'].astimezone(zona_mx)
+            
+            fecha_val = row['FECHA']
+            if pd.isna(fecha_val):
+                continue
+            fecha_bd = fecha_val.tz_localize(None).replace(tzinfo=zona_mx) if fecha_val.tzinfo is None else fecha_val.astimezone(zona_mx)
             
             if row['VALUE'] == 0:
                 umbral_alerta = n_arr * 0.50
@@ -149,15 +151,15 @@ while True:
                 elif n_tq < umbral_alerta and n_arr > 0: estatus, razon = "❌ No arranca con su condición de tanque", "Nivel bajo"
                 else: estatus, razon = "❌ Estatus desconocido", "Estatus desconocido"
                 
-                if ('alertas_enviadas' in st.session_state and st.session_state.alertas_activas and fecha_bd.date() == ahora_actual.date() and (ahora_actual - fecha_bd) >= timedelta(hours=3) and inc == "Sin incidencia" and razon != "Operación normal" and info['Pozos'] not in st.session_state.alertas_enviadas):
-                    enviar_alerta(info['Pozos'], f"{n_tq:.2f}", f"{n_arr:.2f}", row['FECHA'].time(), h_p_val, h_a_val, razon, row['FECHA'].time().strftime('%H:%M:%S'))
+                if (st.session_state.get('alertas_activas', False) and fecha_bd.date() == ahora_actual.date() and (ahora_actual - fecha_bd) >= timedelta(hours=3) and inc == "Sin incidencia" and razon != "Operación normal" and info['Pozos'] not in st.session_state.alertas_enviadas):
+                    enviar_alerta(info['Pozos'], f"{n_tq:.2f}", f"{n_arr:.2f}", fecha_val.time(), h_p_val, h_a_val, razon, fecha_val.time().strftime('%H:%M:%S'))
                     st.session_state.alertas_enviadas[info['Pozos']] = ahora_actual
                 
                 lista_apg.append({
                     "Pozo": info['Pozos'], 
                     "Estatus_Paro": estatus, 
-                    "Fecha": row['FECHA'].date(), 
-                    "Hora": row['FECHA'].strftime('%H:%M'), 
+                    "Fecha": fecha_val.date(), 
+                    "Hora": fecha_val.strftime('%H:%M'), 
                     "H_Paro": h_p_val.strftime('%H:%M'), 
                     "H_Arranque": h_a_val.strftime('%H:%M'), 
                     "Incidencia": inc, 
@@ -167,16 +169,16 @@ while True:
                     "V_L1": f"{float(mapa_aux.get(str(info['voltaje_L1']), 0)):.2f}", 
                     "V_L2": f"{float(mapa_aux.get(str(info['voltaje_L2']), 0)):.2f}", 
                     "V_L3": f"{float(mapa_aux.get(str(info['voltaje_L3']), 0)):.2f}", 
-                    "TS": row['FECHA']
+                    "TS": fecha_val
                 })
             else:
-                if 'alertas_enviadas' in st.session_state and info['Pozos'] in st.session_state.alertas_enviadas: 
+                if info['Pozos'] in st.session_state.alertas_enviadas: 
                     del st.session_state.alertas_enviadas[info['Pozos']]
                 lista_enc.append({
                     "Pozo": info['Pozos'], 
-                    "Fecha": row['FECHA'].date(), 
-                    "Hora": row['FECHA'].strftime('%H:%M'), 
-                    "TS": row['FECHA']
+                    "Fecha": fecha_val.date(), 
+                    "Hora": fecha_val.strftime('%H:%M'), 
+                    "TS": fecha_val
                 })
 
         df_final = pd.DataFrame(lista_apg).sort_values(by='TS', ascending=False) if lista_apg else pd.DataFrame()
@@ -189,11 +191,13 @@ while True:
                     c = '#FF0000' if '❌' in e else '#FFD700' if '⚠️' in e else '#00FF00' if '✅' in e else 'inherit'
                     return [f'color: {c}'] * len(row)
                 st.dataframe(df_final.drop(columns=['TS']).style.apply(color_fila, axis=1).set_properties(**{'text-align': 'center'}), use_container_width=True, hide_index=True)
+            else:
+                st.info("No hay pozos apagados que mostrar.")
         
         with placeholder_enc:
-            df_mostrar = df_enc_full
-            if st.session_state.busqueda_pozo:
-                df_mostrar = df_enc_full[df_enc_full['Pozo'].astype(str).str.contains(st.session_state.busqueda_pozo, case=False, na=False)]
+            df_mostrar = df_enc_full.copy()
+            if st.session_state.get('busqueda_pozo', ''):
+                df_mostrar = df_mostrar[df_mostrar['Pozo'].astype(str).str.contains(st.session_state.busqueda_pozo, case=False, na=False)]
             if not df_mostrar.empty: 
                 st.dataframe(df_mostrar.drop(columns=['TS']), use_container_width=True, hide_index=True)
             else:
