@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from datetime import time, datetime, timedelta
 import time as t
 import threading
@@ -44,7 +44,7 @@ def obtener_datos(query, engine):
 def ejecutar_sql(query, params=None):
     with ENGINE_DIC.connect() as conn:
         with conn.begin():
-            conn.execute(pd.text(query) if isinstance(query, str) else query, params or {})
+            conn.execute(text(query) if isinstance(query, str) else query, params or {})
 
 # --- FUNCIONES ---
 def es_periodo_de_paro_programado(t_par, t_arr):
@@ -147,13 +147,12 @@ with placeholder_dest.container():
             if btn_crear:
                 if nuevo_nombre and nuevo_chart:
                     try:
-                        # Obtener el ID máximo actual de la tabla y sumarle 1 de forma automática
                         df_max_id = obtener_datos("SELECT MAX(CAST(id AS UNSIGNED)) as max_id FROM Diccionario_telegram", ENGINE_DIC)
                         siguiente_id = 1
                         if not df_max_id.empty and pd.notnull(df_max_id.iloc[0]['max_id']):
                             siguiente_id = int(df_max_id.iloc[0]['max_id']) + 1
                         
-                        nuevo_id_str = f"{siguiente_id:03d}"  # Formato con ceros a la izquierda (ej. 005)
+                        nuevo_id_str = f"{siguiente_id:03d}"
 
                         ejecutar_sql(
                             "INSERT INTO Diccionario_telegram (id, nombre, chart_id, activo, departamento) VALUES (:id, :nombre, :chart_id, 'Si', :depto)",
