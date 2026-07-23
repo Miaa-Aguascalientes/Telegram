@@ -198,17 +198,24 @@ with placeholder_dest.container():
         uid_Target = st.session_state.user_to_delete
         st.warning(f"⚠️ Estás a punto de eliminar al usuario con ID: {uid_Target}. Esta acción no se puede deshacer.")
         
+        # Campo para ingresar la palabra de confirmación
+        confirm_text = st.text_input("Para confirmar, escribe la palabra **DELETE** en mayúsculas:", key="input_confirm_delete")
+        
         c_btn1, c_btn2 = st.columns(2)
         with c_btn1:
+            # El botón solo se habilita o procesa si el texto coincide exactamente con 'DELETE'
             if st.button("Sí, confirmar eliminación", type="primary", key="btn_ejecutar_eliminar_def"):
-                try:
-                    ejecutar_sql("DELETE FROM Diccionario_telegram WHERE id = :uid", {"uid": uid_Target})
-                    st.success("Registro eliminado correctamente.")
-                    st.session_state.user_to_delete = None
-                    t.sleep(0.5)
-                    st.rerun()
-                except Exception as ex:
-                    st.error(f"Error al eliminar de la base de datos: {ex}")
+                if confirm_text.strip() == "DELETE":
+                    try:
+                        ejecutar_sql("DELETE FROM Diccionario_telegram WHERE id = :uid", {"uid": uid_Target})
+                        st.success("Registro eliminado correctamente.")
+                        st.session_state.user_to_delete = None
+                        t.sleep(0.5)
+                        st.rerun()
+                    except Exception as ex:
+                        st.error(f"Error al eliminar de la base de datos: {ex}")
+                else:
+                    st.error("La palabra ingresada no coincide. Debes escribir exactamente **DELETE** para confirmar.")
         with c_btn2:
             if st.button("Cancelar", key="btn_cancelar_eliminar_def"):
                 st.session_state.user_to_delete = None
