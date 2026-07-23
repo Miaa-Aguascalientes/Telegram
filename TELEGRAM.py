@@ -7,18 +7,8 @@ import threading
 import requests
 from zoneinfo import ZoneInfo
 
-# Config```python
-import streamlit as st
-import pandas as pd
-from sqlalchemy import create_engine
-from datetime import time, datetime, timedelta
-import time as t
-import threading
-import requests
-from zoneinfo import ZoneInfo
-
 # Configuración de página
-st.set_page_config(layout="wide", page_title="Consola de operación", page_icon="[https://www.miaa.mx/favicon.ico](https://www.miaa.mx/favicon.ico)")
+st.set_page_config(layout="wide", page_title="Consola de operación", page_icon="https://www.miaa.mx/favicon.ico")
 
 # --- ESTADO DE SESIÓN ---
 if 'alertas_enviadas' not in st.session_state: st.session_state.alertas_enviadas = {}
@@ -75,7 +65,7 @@ def enviar_alerta(pozo, nivel, nivel_arr, hora_alerta, h_paro, h_arranque, razon
         try:
             df_ids = obtener_datos("SELECT chart_id FROM Diccionario_telegram WHERE activo = 'Si'", ENGINE_DIC)
             for chat_id in df_ids['chart_id'].tolist(): 
-                requests.get(f"[https://api.telegram.org/bot](https://api.telegram.org/bot){token}/sendMessage", params={'chat_id': chat_id, 'text': mensaje, 'parse_mode': 'HTML'}, timeout=5)
+                requests.get(f"https://api.telegram.org/bot{token}/sendMessage", params={'chat_id': chat_id, 'text': mensaje, 'parse_mode': 'HTML'}, timeout=5)
         except: pass
     threading.Thread(target=send, daemon=True).start()
     st.session_state.logs.append(f"[{datetime.now(zona_mx).strftime('%H:%M:%S')}] Alerta enviada: {pozo} - {razon} (Paro: {hora_paro})")
@@ -102,7 +92,7 @@ col_h1, col_h2 = st.columns([2, 9])
 with col_h1:
     st.markdown("""
         <div style="width: 250px;">
-            <img src="[https://raw.githubusercontent.com/Miaa-Aguascalientes/Logos/38504978c8f77a4dac38ad476f74dbdee6af2cad/LogoMIAA.svg](https://raw.githubusercontent.com/Miaa-Aguascalientes/Logos/38504978c8f77a4dac38ad476f74dbdee6af2cad/LogoMIAA.svg)" 
+            <img src="https://raw.githubusercontent.com/Miaa-Aguascalientes/Logos/38504978c8f77a4dac38ad476f74dbdee6af2cad/LogoMIAA.svg" 
                  style="width: 100%; height: auto; display: block;">
         </div>
     """, unsafe_allow_html=True)
@@ -119,7 +109,7 @@ with c1:
 with c3:
     st.text_input("🔍 Buscar pozo (solo encendidos)...", key='busqueda_pozo')
 
-# --- ESTRUCTURA ---
+# --- ESTRUCTURA (Ancho modificado para dar espacio a Pozos Apagados) ---
 col_izq, col_der = st.columns([0.80, 0.20])
 with col_izq:
     st.subheader("🔴 Pozos Apagados")
@@ -214,7 +204,6 @@ while True:
     with placeholder_dest:
         st.subheader("👥 Gestión de Destinatarios de Alertas (Telegram)")
         
-        # Formulario para añadir nuevo usuario con key única dentro del bucle
         with st.expander("➕ Añadir nuevo destinatario"):
             with st.form("form_nuevo_usuario_dinamico"):
                 f_col1, f_col2, f_col3, f_col4 = st.columns(4)
