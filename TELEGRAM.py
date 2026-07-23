@@ -18,16 +18,15 @@ if 'busqueda_pozo' not in st.session_state: st.session_state.busqueda_pozo = ""
 
 zona_mx = ZoneInfo("America/Mexico_City")
 
-# --- CONEXIÓN ROBUSTA A BASES DE DATOS ---
+# --- CONEXIÓN ROBUSTA USANDO SECRETS ---
 @st.cache_resource
 def get_engines(): 
-    # Se usan las credenciales directas y funcionales para asegurar la conexión con el servidor
     engine_dic = create_engine(
-        "mysql+pymysql://miaamx_telemetria2:bWkrw1Uum1O&@miaa.mx/miaamx_telemetria2",
+        st.secrets["databases"]["url_dic"],
         pool_pre_ping=True, pool_recycle=1800, pool_timeout=30
     )
     engine_scada = create_engine(
-        "mysql+pymysql://miaamx_dashboard:h97_p,NQPo=l@miaa.mx/miaamx_telemetria",
+        st.secrets["databases"]["url_scada"],
         pool_pre_ping=True, pool_recycle=1800, pool_timeout=30
     )
     return engine_dic, engine_scada
@@ -163,10 +162,10 @@ while True:
             lista_apg.append({"Pozo": info['Pozos'], "Estatus_Paro": estatus, "Fecha": row['FECHA'].date(), "Hora": row['FECHA'].time(), "H_Paro": h_p_val, "H_Arranque": h_a_val, "Incidencia": inc, "Nivel_Tanque": f"{n_tq:.2f}" if n_tq > 0 else "Directo a red", "Nivel_Arranque": f"{n_arr:.2f}" if n_arr > 0 else "", "Nivel_Paro": f"{n_par:.2f}" if n_par > 0 else "", "V_L1": f"{float(mapa_aux.get(str(info['voltaje_L1']), 0)):.2f}", "V_L2": f"{float(mapa_aux.get(str(info['voltaje_L2']), 0)):.2f}", "V_L3": f"{float(mapa_aux.get(str(info['voltaje_L3']), 0)):.2f}", "TS": row['FECHA']})
         else:
             if info['Pozos'] in st.session_state.alertas_enviadas: del st.session_state.alertas_enviadas[info['Pozos']]
-            lista_enc.append({"Pozo": info['Pozos'], "Fecha": row['FECHA'].date(), "Hora": row['FECHA'].time()})
+            lista_enc.append({"Pozo": info['Pozos'], "Fecha": row['FECHA'].date(), "Hora": row['FECHA'].time(), "TS": row['FECHA']})
 
     df_final = pd.DataFrame(lista_apg).sort_values(by='TS', ascending=False) if lista_apg else pd.DataFrame()
-    df_enc_full = pd.DataFrame(lista_enc).sort_values(by='Fecha', ascending=False) if lista_enc else pd.DataFrame()
+    df_enc_full = pd.DataFrame(lista_enc).sort_values(by='TS', ascending=False) if lista_enc else pd.DataFrame()
     
     with placeholder_apg:
         if not df_final.empty:
@@ -180,7 +179,8 @@ while True:
         df_mostrar = df_enc_full
         if st.session_state.busqueda_pozo:
             df_mostrar = df_enc_full[df_enc_full['Pozo'].astype(str).str.contains(st.session_state.busqueda_pozo, case=False, na=False)]
-        if not df_mostrar.empty: st.dataframe(df_mostrar, use_container_width=True, hide_index=True)
+        if not df_mostrar.empty: 
+            st.dataframe(df_mostrar.drop(columns=['TS']), use_container_width=True, hide_index=True)
             
     with placeholder_logs:
         st.subheader("📋 Registro de Alertas")
