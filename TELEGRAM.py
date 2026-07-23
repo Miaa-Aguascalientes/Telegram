@@ -188,7 +188,7 @@ with placeholder_dest.container():
                         st.error(f"Error al actualizar: {ex}")
             with cols_u[4]:
                 if st.button("🗑️ Eliminar", key=f"del_user_{row_user['id']}_{idx}"):
-                    st.session_state.user_to_delete = row_user['to_dict'] if hasattr(row_user, 'to_dict') else row_user.to_dict()
+                    st.session_state.user_to_delete = row_user.to_dict()
                     st.rerun()
     else:
         st.info("No se encontraron registros en Diccionario_telegram.")
