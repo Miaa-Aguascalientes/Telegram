@@ -109,7 +109,7 @@ with c1:
 with c3:
     st.text_input("🔍 Buscar pozo (solo encendidos)...", key='busqueda_pozo')
 
-# --- ESTRUCTURA (Ancho modificado para dar espacio a Pozos Apagados) ---
+# --- ESTRUCTURA ---
 col_izq, col_der = st.columns([0.80, 0.20])
 with col_izq:
     st.subheader("🔴 Pozos Apagados")
@@ -121,19 +121,83 @@ with col_der:
 placeholder_logs = st.empty()
 placeholder_dest = st.empty()
 
+# --- CARGA DE DATOS GENERALES ---
+df_dic = obtener_datos("SELECT * FROM Diccionario_de_pozos WHERE bomba != 'Sin telemetria'", ENGINE_DIC)
+
+try:
+    df_destinatarios = obtener_datos("SELECT id, nombre, chart_id, activo, departamento FROM Diccionario_telegram", ENGINE_DIC)
+except:
+    df_destinatarios = pd.DataFrame()
+
+# --- RENDERIZADO FUERA DEL BUCLE ---
+with placeholder_dest.container():
+    st.subheader("👥 Gestión de Destinatarios de Alertas (Telegram)")
+    
+    with st.expander("➕ Añadir nuevo destinatario"):
+        with st.form("form_nuevo_usuario_dinamico_unico"):
+            f_col1, f_col2, f_col3, f_col4 = st.columns(4)
+            with f_col1:
+                nuevo_id = st.text_input("ID (ej. 005)", key="input_nuevo_id")
+            with f_col2:
+                nuevo_nombre = st.text_input("Nombre completo", key="input_nuevo_nombre")
+            with f_col3:
+                nuevo_chart = st.text_input("Chart ID (Telegram)", key="input_nuevo_chart")
+            with f_col4:
+                nuevo_depto = st.text_input("Departamento", value="Planeacion Tecnica", key="input_nuevo_depto")
+            
+            btn_crear = st.form_submit_button("Guardar Usuario")
+            if btn_crear:
+                if nuevo_id and nuevo_nombre and nuevo_chart:
+                    try:
+                        ejecutar_sql(
+                            "INSERT INTO Diccionario_telegram (id, nombre, chart_id, activo, departamento) VALUES (:id, :nombre, :chart_id, 'Si', :depto)",
+                            {"id": nuevo_id, "nombre": nuevo_nombre, "chart_id": nuevo_chart, "depto": nuevo_depto}
+                        )
+                        st.success(f"Usuario {nuevo_nombre} añadido correctamente.")
+                        st.rerun()
+                    except Exception as ex:
+                        st.error(f"Error al insertar el usuario: {ex}")
+                else:
+                    st.warning("Por favor completa los campos obligatorios (ID, Nombre y Chart ID).")
+
+    if not df_destinatarios.empty:
+        for idx, row_user in df_destinatarios.iterrows():
+            cols_u = st.columns([2, 2, 2, 1, 1])
+            with cols_u[0]:
+                st.text(f"👤 {row_user['nombre']}")
+            with cols_u[1]:
+                st.text(f"💬 ID: {row_user['chart_id']}")
+            with cols_u[2]:
+                st.text(f"🏢 {row_user['departamento']}")
+            with cols_u[3]:
+                actual_val = True if str(row_user['activo']).strip().lower() == 'si' else False
+                nuevo_estado = st.toggle("Activo", value=actual_val, key=f"toggle_user_{row_user['id']}_{idx}")
+                nuevo_str = "Si" if nuevo_estado else "No"
+                if nuevo_str != str(row_user['activo']):
+                    try:
+                        ejecutar_sql("UPDATE Diccionario_telegram SET activo = :val WHERE id = :uid", {"val": nuevo_str, "uid": row_user['id']})
+                        st.toast(f"Actualizado: {row_user['nombre']} -> {nuevo_str}")
+                        st.rerun()
+                    except Exception as ex:
+                        st.error(f"Error al actualizar: {ex}")
+            with cols_u[4]:
+                if st.button("🗑️ Eliminar", key=f"del_user_{row_user['id']}_{idx}"):
+                    try:
+                        ejecutar_sql("DELETE FROM Diccionario_telegram WHERE id = :uid", {"uid": row_user['id']})
+                        st.toast(f"Usuario {row_user['nombre']} eliminado.")
+                        st.rerun()
+                    except Exception as ex:
+                        st.error(f"Error al eliminar: {ex}")
+    else:
+        st.info("No se encontraron registros en Diccionario_telegram.")
+
 # --- BUCLE ---
 while True:
-    df_dic = obtener_datos("SELECT * FROM Diccionario_de_pozos WHERE bomba != 'Sin telemetria'", ENGINE_DIC)
     try:
         df_inc = obtener_datos("SELECT NUM_POZO, DIAGNOSTICO_FALLA FROM vw_incidencias_en_pozos WHERE ESTATUS != 'Cerrada'", ENGINE_SCADA)
         df_inc['KEY'] = df_inc['NUM_POZO'].astype(str).str.replace(r'[- ]', '', regex=True)
         mapa_inc = dict(zip(df_inc['KEY'], df_inc['DIAGNOSTICO_FALLA']))
     except: mapa_inc = {}
-
-    try:
-        df_destinatarios = obtener_datos("SELECT id, nombre, chart_id, activo, departamento FROM Diccionario_telegram", ENGINE_DIC)
-    except:
-        df_destinatarios = pd.DataFrame()
 
     tags = "', '".join(df_dic['bomba'].tolist())
     df = obtener_datos(f"SELECT r.NAME, h.VALUE, h.FECHA FROM VfiTagNumHistory_Ultimo h JOIN VfiTagRef r ON h.GATEID = r.GATEID WHERE r.NAME IN ('{tags}') AND h.FECHA = (SELECT MAX(FECHA) FROM VfiTagNumHistory_Ultimo WHERE GATEID = h.GATEID)", ENGINE_SCADA)
@@ -201,65 +265,4 @@ while True:
         st.subheader("📋 Registro de Alertas")
         st.markdown(f'<div class="log-console">{"<br>".join(reversed(st.session_state.logs))}</div>', unsafe_allow_html=True)
 
-    with placeholder_dest:
-        st.subheader("👥 Gestión de Destinatarios de Alertas (Telegram)")
-        
-        with st.expander("➕ Añadir nuevo destinatario"):
-            with st.form("form_nuevo_usuario_dinamico"):
-                f_col1, f_col2, f_col3, f_col4 = st.columns(4)
-                with f_col1:
-                    nuevo_id = st.text_input("ID (ej. 005)", key="input_nuevo_id")
-                with f_col2:
-                    nuevo_nombre = st.text_input("Nombre completo", key="input_nuevo_nombre")
-                with f_col3:
-                    nuevo_chart = st.text_input("Chart ID (Telegram)", key="input_nuevo_chart")
-                with f_col4:
-                    nuevo_depto = st.text_input("Departamento", value="Planeacion Tecnica", key="input_nuevo_depto")
-                
-                btn_crear = st.form_submit_button("Guardar Usuario")
-                if btn_crear:
-                    if nuevo_id and nuevo_nombre and nuevo_chart:
-                        try:
-                            ejecutar_sql(
-                                "INSERT INTO Diccionario_telegram (id, nombre, chart_id, activo, departamento) VALUES (:id, :nombre, :chart_id, 'Si', :depto)",
-                                {"id": nuevo_id, "nombre": nuevo_nombre, "chart_id": nuevo_chart, "depto": nuevo_depto}
-                            )
-                            st.success(f"Usuario {nuevo_nombre} añadido correctamente.")
-                            st.rerun()
-                        except Exception as ex:
-                            st.error(f"Error al insertar el usuario: {ex}")
-                    else:
-                        st.warning("Por favor completa los campos obligatorios (ID, Nombre y Chart ID).")
-
-        if not df_destinatarios.empty:
-            for idx, row_user in df_destinatarios.iterrows():
-                cols_u = st.columns([2, 2, 2, 1, 1])
-                with cols_u[0]:
-                    st.text(f"👤 {row_user['nombre']}")
-                with cols_u[1]:
-                    st.text(f"💬 ID: {row_user['chart_id']}")
-                with cols_u[2]:
-                    st.text(f"🏢 {row_user['departamento']}")
-                with cols_u[3]:
-                    actual_val = True if str(row_user['activo']).strip().lower() == 'si' else False
-                    nuevo_estado = st.toggle("Activo", value=actual_val, key=f"toggle_user_{row_user['id']}_{idx}")
-                    nuevo_str = "Si" if nuevo_estado else "No"
-                    if nuevo_str != str(row_user['activo']):
-                        try:
-                            ejecutar_sql("UPDATE Diccionario_telegram SET activo = :val WHERE id = :uid", {"val": nuevo_str, "uid": row_user['id']})
-                            st.toast(f"Actualizado: {row_user['nombre']} -> {nuevo_str}")
-                            st.rerun()
-                        except Exception as ex:
-                            st.error(f"Error al actualizar: {ex}")
-                with cols_u[4]:
-                    if st.button("🗑️ Eliminar", key=f"del_user_{row_user['id']}_{idx}"):
-                        try:
-                            ejecutar_sql("DELETE FROM Diccionario_telegram WHERE id = :uid", {"uid": row_user['id']})
-                            st.toast(f"Usuario {row_user['nombre']} eliminado.")
-                            st.rerun()
-                        except Exception as ex:
-                            st.error(f"Error al eliminar: {ex}")
-        else:
-            st.info("No se encontraron registros en Diccionario_telegram.")
-    
     t.sleep(30)
