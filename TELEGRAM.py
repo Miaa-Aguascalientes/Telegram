@@ -39,11 +39,12 @@ def enviar_alerta(pozo, nivel, nivel_arr, hora_alerta, h_paro, h_arranque, razon
             engine_dic_bg = create_engine(
                 st.secrets["databases"]["url_dic"], 
                 pool_pre_ping=True, 
-                pool_recycle=300,
-                connect_args={"connect_timeout": 10}
+                pool_recycle=10,
+                connect_args={"connect_timeout": 5}
             )
             with engine_dic_bg.connect() as conn:
                 df_ids = pd.read_sql("SELECT chart_id FROM Diccionario_telegram WHERE activo = 'Si'", conn)
+            engine_dic_bg.dispose()
             for chat_id in df_ids['chart_id'].tolist(): 
                 requests.get(f"https://api.telegram.org/bot{token}/sendMessage", params={'chat_id': chat_id, 'text': mensaje, 'parse_mode': 'HTML'}, timeout=5)
         except: pass
@@ -63,13 +64,6 @@ st.write("""<style>
         display: block;
     }
 </style>""", unsafe_allow_html=True)
-
-@st.cache_resource
-def get_engines(): 
-    return (
-        create_engine(st.secrets["databases"]["url_dic"], pool_pre_ping=True, pool_recycle=300, connect_args={"connect_timeout": 30, "read_timeout": 30, "write_timeout": 30}), 
-        create_engine(st.secrets["databases"]["url_scada"], pool_pre_ping=True, pool_recycle=300, connect_args={"connect_timeout": 30, "read_timeout": 30, "write_timeout": 30})
-    )
 
 def convertir_a_hora(valor):
     try: m = float(valor); return time(int((m // 60) % 24), int(m % 60))
@@ -110,9 +104,24 @@ placeholder_logs = st.empty()
 
 # --- BUCLE ---
 while True:
+    engine_dic = None
+    engine_scada = None
     try:
-        ENGINE_DIC, ENGINE_SCADA = get_engines()
-        with ENGINE_DIC.connect() as conn_dic, ENGINE_SCADA.connect() as conn_scada:
+        # Se recrean los engines en cada ciclo con destrucción explícita para evitar saturar sockets de red
+        engine_dic = create_engine(
+            st.secrets["databases"]["url_dic"], 
+            pool_pre_ping=True, 
+            pool_recycle=10, 
+            connect_args={"connect_timeout": 15}
+        )
+        engine_scada = create_engine(
+            st.secrets["databases"]["url_scada"], 
+            pool_pre_ping=True, 
+            pool_recycle=10, 
+            connect_args={"connect_timeout": 15}
+        )
+
+        with engine_dic.connect() as conn_dic, engine_scada.connect() as conn_scada:
             df_dic = pd.read_sql("SELECT * FROM Diccionario_de_pozos WHERE bomba != 'Sin telemetria'", conn_dic)
             
             try:
@@ -206,6 +215,14 @@ while True:
         st.error(f"Error de conexión con la base de datos (Timed Out / No se pudo alcanzar el servidor): {e}")
     except Exception as e:
         st.error(f"Ocurrió un error inesperado: {e}")
+    finally:
+        # Forzar el cierre y limpieza de los motores de base de datos en cada iteración del bucle
+        if engine_dic:
+            try: engine_dic.dispose()
+            except: pass
+        if engine_scada:
+            try: engine_scada.dispose()
+            except: pass
         
     with placeholder_logs:
         st.subheader("📋 Registro de Alertas")
