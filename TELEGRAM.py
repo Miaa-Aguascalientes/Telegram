@@ -149,7 +149,7 @@ while True:
                 elif n_tq < umbral_alerta and n_arr > 0: estatus, razon = "❌ No arranca con su condición de tanque", "Nivel bajo"
                 else: estatus, razon = "❌ Estatus desconocido", "Estatus desconocido"
                 
-                if (st.session_state.alertas_activas and fecha_bd.date() == ahora_actual.date() and (ahora_actual - fecha_bd) >= timedelta(hours=3) and inc == "Sin incidencia" and razon != "Operación normal" and info['Pozos'] not in st.session_state.alertas_enviadas):
+                if ('alertas_enviadas' in st.session_state and st.session_state.alertas_activas and fecha_bd.date() == ahora_actual.date() and (ahora_actual - fecha_bd) >= timedelta(hours=3) and inc == "Sin incidencia" and razon != "Operación normal" and info['Pozos'] not in st.session_state.alertas_enviadas):
                     enviar_alerta(info['Pozos'], f"{n_tq:.2f}", f"{n_arr:.2f}", row['FECHA'].time(), h_p_val, h_a_val, razon, row['FECHA'].time().strftime('%H:%M:%S'))
                     st.session_state.alertas_enviadas[info['Pozos']] = ahora_actual
                 
@@ -170,7 +170,8 @@ while True:
                     "TS": row['FECHA']
                 })
             else:
-                if info['Pozos'] in st.session_state.alertas_enviadas: del st.session_state.alertas_enviadas[info['Pozos']]
+                if 'alertas_enviadas' in st.session_state and info['Pozos'] in st.session_state.alertas_enviadas: 
+                    del st.session_state.alertas_enviadas[info['Pozos']]
                 lista_enc.append({
                     "Pozo": info['Pozos'], 
                     "Fecha": row['FECHA'].date(), 
@@ -195,6 +196,8 @@ while True:
                 df_mostrar = df_enc_full[df_enc_full['Pozo'].astype(str).str.contains(st.session_state.busqueda_pozo, case=False, na=False)]
             if not df_mostrar.empty: 
                 st.dataframe(df_mostrar.drop(columns=['TS']), use_container_width=True, hide_index=True)
+            else:
+                st.info("No hay pozos encendidos que mostrar.")
                 
     except SQLAlchemyError as e:
         st.error(f"Error de conexión con la base de datos (Timed Out / No se pudo alcanzar el servidor): {e}")
@@ -203,6 +206,7 @@ while True:
         
     with placeholder_logs:
         st.subheader("📋 Registro de Alertas")
-        st.markdown(f'<div class="log-console">{"<br>".join(reversed(st.session_state.logs))}</div>', unsafe_allow_html=True)
+        logs_list = st.session_state.get('logs', [])
+        st.markdown(f'<div class="log-console">{"<br>".join(reversed(logs_list))}</div>', unsafe_allow_html=True)
     
     t.sleep(30)
