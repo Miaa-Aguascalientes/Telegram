@@ -150,10 +150,14 @@ while True:
         
         if row['VALUE'] == 0:
             umbral_alerta = n_arr * 0.50
-            if inc != "Sin incidencia": estatus, razon = "⚠️ Parado por incidencia", inc
-            elif es_periodo_de_paro_programado(h_p_val, h_a_val) or (n_tq >= n_par and n_par > 0) or (n_tq >= umbral_alerta and n_tq < n_par): estatus, razon = "✅ Normal", "Operación normal"
-            elif n_tq < umbral_alerta and n_arr > 0: estatus, razon = "❌ No arranca con su condición de tanque", "Nivel bajo"
-            else: estatus, razon = "❌ Estatus desconocido", "Estatus desconocido"
+            if inc != "Sin incidencia": 
+                estatus, razon = "⚠️ Parado por incidencia", inc
+            elif es_periodo_de_paro_programado(h_p_val, h_a_val) or (n_tq >= n_par and n_par > 0) or (n_tq >= umbral_alerta and n_tq < n_par): 
+                estatus, razon = "✅ Normal", "Operación normal"
+            elif n_tq < umbral_alerta and n_arr > 0: 
+                estatus, razon = "❌ No arranca con su condición de tanque", "No arranca con su condicion de nivel de tanque"
+            else: 
+                estatus, razon = "❌ Estatus desconocido", "Estatus desconocido"
             
             if (st.session_state.alertas_activas and fecha_bd.date() == ahora_actual.date() and (ahora_actual - fecha_bd) >= timedelta(hours=3) and inc == "Sin incidencia" and razon != "Operación normal" and info['Pozos'] not in st.session_state.alertas_enviadas):
                 enviar_alerta(info['Pozos'], f"{n_tq:.2f}", f"{n_arr:.2f}", row['FECHA'].time(), h_p_val, h_a_val, razon, row['FECHA'].time().strftime('%H:%M:%S'))
