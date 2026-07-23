@@ -199,13 +199,13 @@ with placeholder_dest.container():
         @st.dialog("⚠️ Confirmar eliminación de usuario")
         def modal_confirmar_eliminacion():
             st.write(f"Estás a punto de eliminar al usuario **{u_info['nombre']}** (ID: {u_info['id']}).")
-            st.write("Para confirmar, escribe la palabra **delete** en el siguiente campo:")
-            confirm_word = st.text_input("Escribe 'delete' para confirmar", key="input_confirm_delete")
+            st.write("Escribe la palabra requerida en el siguiente campo para confirmar:")
+            confirm_word = st.text_input("Escribe la palabra de confirmación", key="input_confirm_delete")
             
             c_btn1, c_btn2 = st.columns(2)
             with c_btn1:
                 if st.button("Confirmar eliminación", type="primary"):
-                    if confirm_word.strip() == "delete":
+                    if confirm_word.strip().lower() == "delete":
                         try:
                             ejecutar_sql("DELETE FROM Diccionario_telegram WHERE id = :uid", {"uid": u_info['id']})
                             st.success(f"Usuario {u_info['nombre']} eliminado correctamente.")
@@ -215,7 +215,7 @@ with placeholder_dest.container():
                         except Exception as ex:
                             st.error(f"Error al eliminar de la base de datos: {ex}")
                     else:
-                        st.error("La palabra escrita no coincide. Escribe exactamente 'delete'.")
+                        st.error("La palabra escrita no coincide. Inténtalo de nuevo.")
             with c_btn2:
                 if st.button("Cancelar"):
                     st.session_state.user_to_delete = None
