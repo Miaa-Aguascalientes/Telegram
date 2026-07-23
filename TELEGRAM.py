@@ -135,30 +135,36 @@ with placeholder_dest.container():
     
     with st.expander("➕ Añadir nuevo destinatario"):
         with st.form("form_nuevo_usuario_dinamico_unico"):
-            f_col1, f_col2, f_col3, f_col4 = st.columns(4)
+            f_col1, f_col2, f_col3 = st.columns(3)
             with f_col1:
-                nuevo_id = st.text_input("ID (ej. 005)", key="input_nuevo_id")
-            with f_col2:
                 nuevo_nombre = st.text_input("Nombre completo", key="input_nuevo_nombre")
-            with f_col3:
+            with f_col2:
                 nuevo_chart = st.text_input("Chart ID (Telegram)", key="input_nuevo_chart")
-            with f_col4:
+            with f_col3:
                 nuevo_depto = st.text_input("Departamento", value="Planeacion Tecnica", key="input_nuevo_depto")
             
             btn_crear = st.form_submit_button("Guardar Usuario")
             if btn_crear:
-                if nuevo_id and nuevo_nombre and nuevo_chart:
+                if nuevo_nombre and nuevo_chart:
                     try:
+                        # Obtener el ID máximo actual de la tabla y sumarle 1 de forma automática
+                        df_max_id = obtener_datos("SELECT MAX(CAST(id AS UNSIGNED)) as max_id FROM Diccionario_telegram", ENGINE_DIC)
+                        siguiente_id = 1
+                        if not df_max_id.empty and pd.notnull(df_max_id.iloc[0]['max_id']):
+                            siguiente_id = int(df_max_id.iloc[0]['max_id']) + 1
+                        
+                        nuevo_id_str = f"{siguiente_id:03d}"  # Formato con ceros a la izquierda (ej. 005)
+
                         ejecutar_sql(
                             "INSERT INTO Diccionario_telegram (id, nombre, chart_id, activo, departamento) VALUES (:id, :nombre, :chart_id, 'Si', :depto)",
-                            {"id": nuevo_id, "nombre": nuevo_nombre, "chart_id": nuevo_chart, "depto": nuevo_depto}
+                            {"id": nuevo_id_str, "nombre": nuevo_nombre, "chart_id": nuevo_chart, "depto": nuevo_depto}
                         )
-                        st.success(f"Usuario {nuevo_nombre} añadido correctamente.")
+                        st.success(f"Usuario {nuevo_nombre} añadido correctamente con ID {nuevo_id_str}.")
                         st.rerun()
                     except Exception as ex:
                         st.error(f"Error al insertar el usuario: {ex}")
                 else:
-                    st.warning("Por favor completa los campos obligatorios (ID, Nombre y Chart ID).")
+                    st.warning("Por favor completa los campos obligatorios (Nombre y Chart ID).")
 
     if not df_destinatarios.empty:
         for idx, row_user in df_destinatarios.iterrows():
