@@ -194,7 +194,7 @@ while True:
             if st.session_state.busqueda_pozo:
                 df_mostrar = df_enc_full[df_enc_full['Pozo'].astype(str).str.contains(st.session_state.busqueda_pozo, case=False, na=False)]
             if not df_mostrar.empty: 
-                st.dataframe(df_mostrar.drop(columns=['TS']), use_index=False, use_container_width=True, hide_index=True)
+                st.dataframe(df_mostrar.drop(columns=['TS']), use_container_width=True, hide_index=True)
                 
     except SQLAlchemyError as e:
         st.error(f"Error de conexión con la base de datos (Timed Out / No se pudo alcanzar el servidor): {e}")
