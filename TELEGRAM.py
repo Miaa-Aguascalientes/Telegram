@@ -1,232 +1,252 @@
 import streamlit as st
 import pandas as pd
 from sqlalchemy import create_engine
-from datetime import time, datetime, timedelta
-import time as t
-import threading
 import requests
-from zoneinfo import ZoneInfo
-from sqlalchemy.exc import SQLAlchemyError
+from datetime import datetime, timedelta, time
+import locale
 
-# Configuración de página
-st.set_page_config(layout="wide", page_title="Consola de operación", page_icon="https://www.miaa.mx/favicon.ico")
+# Intentar establecer el idioma en español para fechas
+try:
+    locale.setlocale(locale.LC_TIME, 'es_ES.UTF-8')
+except:
+    pass 
 
-# --- ESTADO DE SESIÓN ---
-if 'alertas_enviadas' not in st.session_state: st.session_state.alertas_enviadas = {}
-if 'logs' not in st.session_state: st.session_state.logs = []
-if 'alertas_activas' not in st.session_state: st.session_state.alertas_activas = False
-if 'busqueda_pozo' not in st.session_state: st.session_state.busqueda_pozo = ""
+# --- CONFIGURACIÓN DE PÁGINA STREAMLIT ---
+st.set_page_config(layout="wide", page_title="Sistema de monitoreo", page_icon="https://www.miaa.mx/favicon.ico")
 
-zona_mx = ZoneInfo("America/Mexico_City")
+# --- ESTILOS CSS PERSONALIZADOS ---
+st.markdown("""
+    <style>
+        .block-container {
+            padding-top: 1rem;
+            padding-bottom: 1rem;
+            padding-left: 1rem;
+            padding-right: 1rem;
+        }
+        h1, h2, h3 {
+            color: #ffffff;
+        }
+    </style>
+""", unsafe_allow_html=True)
 
-# --- FUNCIONES ---
-def es_periodo_de_paro_programado(t_par, t_arr):
-    if t_par == time(0, 0) and t_arr == time(0, 0): return False
-    ahora = datetime.now(zona_mx).time()
-    if t_par < t_arr: return t_par <= ahora <= t_arr
-    else: return ahora >= t_par or ahora <= t_arr
+# --- CONFIGURACIÓN DE CONEXIÓN ROBUSTA ---
+ENGINE_DIC = create_engine(
+    "mysql+pymysql://miaamx_telemetria2:bWkrw1Uum1O&@miaa.mx/miaamx_telemetria2",
+    pool_pre_ping=True, pool_recycle=1800, pool_timeout=30
+)
+ENGINE_SCADA = create_engine(
+    "mysql+pymysql://miaamx_dashboard:h97_p,NQPo=l@miaa.mx/miaamx_telemetria",
+    pool_pre_ping=True, pool_recycle=1800, pool_timeout=30
+)
+TOKEN = '8985322491:AAF1QviZ0h0I4EVC_LFGeOZk51b4l0VaSq4'
 
-def registrar_cambio_estado():
-    estado = "ACTIVADO" if st.session_state.alertas_activas else "DESACTIVADO"
-    msg = f"[{datetime.now(zona_mx).strftime('%H:%M:%S')}] Servicio de alertas {estado}"
-    st.session_state.logs.append(msg)
-
-def enviar_alerta(pozo, nivel, nivel_arr, hora_alerta, h_paro, h_arranque, razon, hora_paro):
-    token = st.secrets["telegram"]["token"]
-    mensaje = f"📢 <b>Reporte Automatico Miaa</b>\n________________________________\n⚠️ <b>Alerta:</b> Bomba Apagada\n📍 <b>Pozo:</b> {pozo}\n⏳ <b>Hora del paro:</b> {hora_paro}\n💧 <b>Nivel Tanque:</b> {nivel} mts.\n↕️ <b>Nivel Arranque con TQ:</b> {nivel_arr} mts.\n⏲️ <b>Horario de Op:</b> {h_paro} - {h_arranque}\n🔍 <b>Motivo:</b> {razon}"
-    def send():
-        try:
-            engine_dic_bg = create_engine(
-                st.secrets["databases"]["url_dic"], 
-                pool_pre_ping=True, 
-                pool_recycle=10,
-                connect_args={"connect_timeout": 5}
-            )
-            with engine_dic_bg.connect() as conn:
-                df_ids = pd.read_sql("SELECT chart_id FROM Diccionario_telegram WHERE activo = 'Si'", conn)
-            engine_dic_bg.dispose()
-            for chat_id in df_ids['chart_id'].tolist(): 
-                requests.get(f"https://api.telegram.org/bot{token}/sendMessage", params={'chat_id': chat_id, 'text': mensaje, 'parse_mode': 'HTML'}, timeout=5)
-        except: pass
-    threading.Thread(target=send, daemon=True).start()
-    st.session_state.logs.append(f"[{datetime.now(zona_mx).strftime('%H:%M:%S')}] Alerta enviada: {pozo} - {razon} (Paro: {hora_paro})")
-
-# --- CSS ---
-st.write("""<style>
-    #MainMenu, header {visibility: hidden;} 
-    .block-container {padding-top: 0rem !important; padding-bottom: 0rem !important;} 
-    .custom-title {color: #00E5FF !important; font-size: 2rem; font-weight: bold; margin-bottom: 0px; text-align: center; margin-top: 0px;} 
-    .log-console {background-color: #0e1117; color: #00FF00; font-family: monospace; padding: 10px; border: 1px solid #003366; border-radius: 5px; height: 150px; overflow-y: scroll; font-size: 0.85rem;}
-    
-    .logo-container img {
-        width: 300px !important; 
-        height: auto !important;
-        display: block;
-    }
-</style>""", unsafe_allow_html=True)
+if 'alertas_enviadas' not in st.session_state:
+    st.session_state.alertas_enviadas = {}
 
 def convertir_a_hora(valor):
-    try: m = float(valor); return time(int((m // 60) % 24), int(m % 60))
-    except: return time(0, 0)
-
-# --- CABECERA ---
-col_h1, col_h2 = st.columns([2, 9])
-with col_h1:
-    st.markdown("""
-        <div style="width: 250px;">
-            <img src="https://raw.githubusercontent.com/Miaa-Aguascalientes/Logos/38504978c8f77a4dac38ad476f74dbdee6af2cad/LogoMIAA.svg" 
-                 style="width: 100%; height: auto; display: block;">
-        </div>
-    """, unsafe_allow_html=True)
-
-with col_h2: 
-    st.markdown('<h1 class="custom-title">Consola de operación</h1>', unsafe_allow_html=True)
-st.divider()
-
-# --- FILA ALINEADA: TOGGLE Y BUSCADOR ---
-c1, c2, c3 = st.columns([0.3, 0.3, 0.4]) 
-with c1:
-    st.write("###")
-    st.toggle("Activar envío de alertas a Telegram", key="alertas_activas", on_change=registrar_cambio_estado) 
-with c3:
-    st.text_input("🔍 Buscar pozo (solo encendidos)...", key='busqueda_pozo')
-
-# --- ESTRUCTURA ---
-col_izq, col_der = st.columns([0.65, 0.35])
-with col_izq:
-    st.subheader("🔴 Pozos Apagados")
-    placeholder_apg = st.empty()
-with col_der:
-    st.subheader("🟢 Pozos Encendidos")
-    placeholder_enc = st.empty()
-
-placeholder_logs = st.empty()
-
-# --- BUCLE ---
-while True:
-    engine_dic = None
-    engine_scada = None
     try:
-        # Se recrean los engines en cada ciclo con destrucción explícita para evitar saturar sockets de red
-        engine_dic = create_engine(
-            st.secrets["databases"]["url_dic"], 
-            pool_pre_ping=True, 
-            pool_recycle=10, 
-            connect_args={"connect_timeout": 15}
-        )
-        engine_scada = create_engine(
-            st.secrets["databases"]["url_scada"], 
-            pool_pre_ping=True, 
-            pool_recycle=10, 
-            connect_args={"connect_timeout": 15}
-        )
+        m = float(valor)
+        return time(int((m // 60) % 24), int(m % 60))
+    except: 
+        return time(0, 0)
 
-        with engine_dic.connect() as conn_dic, engine_scada.connect() as conn_scada:
-            df_dic = pd.read_sql("SELECT * FROM Diccionario_de_pozos WHERE bomba != 'Sin telemetria'", conn_dic)
-            
+def es_periodo_de_paro_programado(t_par, t_arr):
+    if t_par == time(0, 0) and t_arr == time(0, 0): 
+        return False
+    ahora = datetime.now().time()
+    if t_par < t_arr:
+        return t_par <= ahora <= t_arr
+    else:
+        return ahora >= t_par or ahora <= t_arr
+
+def enviar_alerta(pozo, nivel, nivel_arr, fecha, hora, h_paro, h_arranque, razon):
+    mensaje = (
+        f"📢 <b>Reporte Automatico Miaa</b>\n"
+        f"________________________________\n"
+        f"⚠️ <b>Alerta:</b> Bomba Apagada\n"
+        f"📍 <b>Pozo:</b> {pozo}\n"
+        f"⏳ <b>Hora del paro:</b> {hora}\n"
+        f"💧 <b>Nivel Tanque:</b> {nivel} mts.\n"
+        f"↕️ <b>Nivel Arranque con TQ:</b> {nivel_arr} mts.\n"         
+        f"⏲️ <b>Horario de Op:</b> {h_paro} - {h_arranque}\n"
+        f"🔍 <b>Motivo:</b> {razon}"
+    )
+    try:
+        query = "SELECT chart_id FROM Diccionario_telegram WHERE activo = 'Si'"
+        df_ids = pd.read_sql(query, ENGINE_DIC)
+        lista_ids = df_ids['chart_id'].tolist()
+        for chat_id in lista_ids:
             try:
-                df_inc = pd.read_sql("SELECT NUM_POZO, DIAGNOSTICO_FALLA FROM vw_incidencias_en_pozos WHERE ESTATUS != 'Cerrada'", conn_scada)
-                df_inc['KEY'] = df_inc['NUM_POZO'].astype(str).str.replace(r'[- ]', '', regex=True)
-                mapa_inc = dict(zip(df_inc['KEY'], df_inc['DIAGNOSTICO_FALLA']))
-            except: mapa_inc = {}
-
-            tags = "', '".join(df_dic['bomba'].tolist())
-            df = pd.read_sql(f"SELECT r.NAME, h.VALUE, h.FECHA FROM VfiTagNumHistory_Ultimo h JOIN VfiTagRef r ON h.GATEID = r.GATEID WHERE r.NAME IN ('{tags}') AND h.FECHA = (SELECT MAX(FECHA) FROM VfiTagNumHistory_Ultimo WHERE GATEID = h.GATEID)", conn_scada)
-            tags_aux = [str(t) for col in ['H_arranque', 'H_paro', 'nivel_tanque', 'nivel_arranque_tq', 'nivel_paro_tq', 'voltaje_L1', 'voltaje_L2', 'voltaje_L3'] for t in df_dic[col].dropna().unique()]
-            df_h = pd.read_sql(f"SELECT r.NAME, h.VALUE FROM VfiTagNumHistory_Ultimo h JOIN VfiTagRef r ON h.GATEID = r.GATEID WHERE r.NAME IN ('{"', '".join(tags_aux)}') AND h.FECHA = (SELECT MAX(FECHA) FROM VfiTagNumHistory_Ultimo WHERE GATEID = h.GATEID)", conn_scada)
-            mapa_aux = dict(zip(df_h['NAME'].astype(str), df_h['VALUE']))
-
-        lista_apg, lista_enc = [], []
-        ahora_actual = datetime.now(zona_mx)
-
-        for _, row in df.iterrows():
-            df_match = df_dic[df_dic['bomba'] == row['NAME']]
-            if df_match.empty: continue
-            info = df_match.iloc[0]
-            inc = mapa_inc.get(str(info['Pozos']).replace('-', '').replace(' ', ''), "Sin incidencia")
-            n_tq, n_arr, n_par = float(mapa_aux.get(str(info['nivel_tanque']), 0) or 0), float(mapa_aux.get(str(info['nivel_arranque_tq']), 0) or 0), float(mapa_aux.get(str(info['nivel_paro_tq']), 0) or 0)
-            h_p_val, h_a_val = convertir_a_hora(mapa_aux.get(str(info['H_paro']))), convertir_a_hora(mapa_aux.get(str(info['H_arranque'])))
-            
-            fecha_val = row['FECHA']
-            if pd.isna(fecha_val):
+                requests.get(f"https://api.telegram.org/bot{TOKEN}/sendMessage", params={'chat_id': chat_id, 'text': mensaje, 'parse_mode': 'HTML'}, timeout=5)
+            except: 
                 continue
-            fecha_bd = fecha_val.tz_localize(None).replace(tzinfo=zona_mx) if fecha_val.tzinfo is None else fecha_val.astimezone(zona_mx)
-            
-            if row['VALUE'] == 0:
-                umbral_alerta = n_arr * 0.50
-                if inc != "Sin incidencia": estatus, razon = "⚠️ Parado por incidencia", inc
-                elif es_periodo_de_paro_programado(h_p_val, h_a_val) or (n_tq >= n_par and n_par > 0) or (n_tq >= umbral_alerta and n_tq < n_par): estatus, razon = "✅ Normal", "Operación normal"
-                elif n_tq < umbral_alerta and n_arr > 0: estatus, razon = "❌ No arranca con su condición de tanque", "Nivel bajo"
-                else: estatus, razon = "❌ Estatus desconocido", "Estatus desconocido"
-                
-                if (st.session_state.get('alertas_activas', False) and fecha_bd.date() == ahora_actual.date() and (ahora_actual - fecha_bd) >= timedelta(hours=3) and inc == "Sin incidencia" and razon != "Operación normal" and info['Pozos'] not in st.session_state.alertas_enviadas):
-                    enviar_alerta(info['Pozos'], f"{n_tq:.2f}", f"{n_arr:.2f}", fecha_val.time(), h_p_val, h_a_val, razon, fecha_val.time().strftime('%H:%M:%S'))
-                    st.session_state.alertas_enviadas[info['Pozos']] = ahora_actual
-                
-                lista_apg.append({
-                    "Pozo": info['Pozos'], 
-                    "Estatus_Paro": estatus, 
-                    "Fecha": fecha_val.date(), 
-                    "Hora": fecha_val.strftime('%H:%M'), 
-                    "H_Paro": h_p_val.strftime('%H:%M'), 
-                    "H_Arranque": h_a_val.strftime('%H:%M'), 
-                    "Incidencia": inc, 
-                    "Nivel_Tanque": f"{n_tq:.2f}" if n_tq > 0 else "Directo a red", 
-                    "Nivel_Arranque": f"{n_arr:.2f}" if n_arr > 0 else "", 
-                    "Nivel_Paro": f"{n_par:.2f}" if n_par > 0 else "", 
-                    "V_L1": f"{float(mapa_aux.get(str(info['voltaje_L1']), 0)):.2f}", 
-                    "V_L2": f"{float(mapa_aux.get(str(info['voltaje_L2']), 0)):.2f}", 
-                    "V_L3": f"{float(mapa_aux.get(str(info['voltaje_L3']), 0)):.2f}", 
-                    "TS": fecha_val
-                })
-            else:
-                if info['Pozos'] in st.session_state.alertas_enviadas: 
-                    del st.session_state.alertas_enviadas[info['Pozos']]
-                lista_enc.append({
-                    "Pozo": info['Pozos'], 
-                    "Fecha": fecha_val.date(), 
-                    "Hora": fecha_val.strftime('%H:%M'), 
-                    "TS": fecha_val
-                })
+    except: 
+        pass
 
-        df_final = pd.DataFrame(lista_apg).sort_values(by='TS', ascending=False) if lista_apg else pd.DataFrame()
-        df_enc_full = pd.DataFrame(lista_enc).sort_values(by='TS', ascending=False) if lista_enc else pd.DataFrame()
-        
-        with placeholder_apg:
-            if not df_final.empty:
-                def color_fila(row):
-                    e = str(row['Estatus_Paro'])
-                    c = '#FF0000' if '❌' in e else '#FFD700' if '⚠️' in e else '#00FF00' if '✅' in e else 'inherit'
-                    return [f'color: {c}'] * len(row)
-                st.dataframe(df_final.drop(columns=['TS']).style.apply(color_fila, axis=1).set_properties(**{'text-align': 'center'}), use_container_width=True, hide_index=True)
-            else:
-                st.info("No hay pozos apagados que mostrar.")
-        
-        with placeholder_enc:
-            df_mostrar = df_enc_full.copy()
-            if st.session_state.get('busqueda_pozo', ''):
-                df_mostrar = df_mostrar[df_mostrar['Pozo'].astype(str).str.contains(st.session_state.busqueda_pozo, case=False, na=False)]
-            if not df_mostrar.empty: 
-                st.dataframe(df_mostrar.drop(columns=['TS']), use_container_width=True, hide_index=True)
-            else:
-                st.info("No hay pozos encendidos que mostrar.")
-                
-    except SQLAlchemyError as e:
-        st.error(f"Error de conexión con la base de datos (Timed Out / No se pudo alcanzar el servidor): {e}")
-    except Exception as e:
-        st.error(f"Ocurrió un error inesperado: {e}")
-    finally:
-        # Forzar el cierre y limpieza de los motores de base de datos en cada iteración del bucle
-        if engine_dic:
-            try: engine_dic.dispose()
-            except: pass
-        if engine_scada:
-            try: engine_scada.dispose()
-            except: pass
-        
-    with placeholder_logs:
-        st.subheader("📋 Registro de Alertas")
-        logs_list = st.session_state.get('logs', [])
-        st.markdown(f'<div class="log-console">{"<br>".join(reversed(logs_list))}</div>', unsafe_allow_html=True)
+def obtener_datos(query, engine):
+    try: 
+        return pd.read_sql(query, engine)
+    except Exception: 
+        engine.dispose()
+        return pd.read_sql(query, engine)
+
+# --- CABECERA Y LOGOTIPO ---
+col_logo, col_titulo = st.columns([1, 5])
+with col_logo:
+    st.image("https://www.miaa.mx/favicon.ico", width=60)
+with col_titulo:
+    st.markdown("<h2 style='text-align: left; color: #ffffff;'>Sistema de Monitoreo MIAA 24/7</h2>", unsafe_allow_html=True)
+
+st.markdown("---")
+
+try:
+    # 1. Cargar diccionario de pozos con voltajes
+    query_dic = "SELECT Pozos, bomba, H_arranque, H_paro, nivel_tanque, nivel_arranque_tq, nivel_paro_tq, voltaje_L1, voltaje_L2, voltaje_L3 FROM Diccionario_de_pozos WHERE bomba != 'Sin telemetria'"
+    df_dic = obtener_datos(query_dic, ENGINE_DIC)
+    tags_str = "', '".join(df_dic['bomba'].tolist())
     
-    t.sleep(30)
+    # 2. Cargar incidencias desde SCADA
+    df_inc = obtener_datos("SELECT NUM_POZO, DIAGNOSTICO_FALLA FROM vw_incidencias_en_pozos WHERE ESTATUS != 'Cerrada'", ENGINE_SCADA)
+    df_inc['P_LIMPIO'] = df_inc['NUM_POZO'].str.replace('-', '', regex=False)
+    mapa_inc = dict(zip(df_inc['P_LIMPIO'], df_inc['DIAGNOSTICO_FALLA']))
+
+    # 3. Obtener estados de las bombas ordenados por fecha y hora más recientes
+    query = f"SELECT r.NAME, h.VALUE, h.FECHA FROM VfiTagNumHistory_Ultimo h JOIN VfiTagRef r ON h.GATEID = r.GATEID WHERE r.NAME IN ('{tags_str}') AND h.FECHA = (SELECT MAX(FECHA) FROM VfiTagNumHistory_Ultimo WHERE GATEID = h.GATEID)"
+    df = obtener_datos(query, ENGINE_SCADA).sort_values(by='FECHA', ascending=False)
+    
+    # Recolectar tags auxiliares
+    lista_tags_aux = list(set(
+        df_dic['H_arranque'].tolist() + 
+        df_dic['H_paro'].tolist() + 
+        df_dic['nivel_tanque'].dropna().tolist() + 
+        df_dic['nivel_arranque_tq'].dropna().tolist() + 
+        df_dic['nivel_paro_tq'].dropna().tolist() +
+        df_dic['voltaje_L1'].dropna().tolist() +
+        df_dic['voltaje_L2'].dropna().tolist() +
+        df_dic['voltaje_L3'].dropna().tolist()
+    ))
+    
+    all_aux_tags = "', '".join(lista_tags_aux)
+    
+    df_h = obtener_datos(f"SELECT r.NAME, h.VALUE FROM VfiTagNumHistory_Ultimo h JOIN VfiTagRef r ON h.GATEID = r.GATEID WHERE r.NAME IN ('{all_aux_tags}') AND h.FECHA = (SELECT MAX(FECHA) FROM VfiTagNumHistory_Ultimo WHERE GATEID = h.GATEID)", ENGINE_SCADA)
+    mapa_aux = dict(zip(df_h['NAME'], df_h['VALUE']))
+
+    lista_apg = []
+    lista_enc = []
+    enc, apg, ahora_dt = 0, 0, datetime.now()
+    
+    for _, row in df.iterrows():
+        info = df_dic[df_dic['bomba'] == row['NAME']].iloc[0]
+        pozo = info['Pozos']
+        
+        v1 = mapa_aux.get(info['voltaje_L1'], 0)
+        v2 = mapa_aux.get(info['voltaje_L2'], 0)
+        v3 = mapa_aux.get(info['voltaje_L3'], 0)
+        
+        v1 = f"{float(v1):.1f}"
+        v2 = f"{float(v2):.1f}"
+        v3 = f"{float(v3):.1f}"
+        
+        inc = mapa_inc.get(pozo.replace('-', ''), "Sin incidencia")
+        f = row['FECHA'].strftime('%d de %B de %Y')
+        h = row['FECHA'].strftime('%H:%M:%S')
+        
+        t_arr = convertir_a_hora(mapa_aux.get(info['H_arranque'], 0))
+        t_par = convertir_a_hora(mapa_aux.get(info['H_paro'], 0))
+        
+        nivel_act = mapa_aux.get(info['nivel_tanque'])
+        niv_arr = mapa_aux.get(info['nivel_arranque_tq'])
+        nivel_act_str = f"{float(nivel_act):.2f}" if nivel_act is not None else "Directo a Red"
+        niv_arr_str = f"{float(niv_arr):.2f}" if niv_arr is not None else ""
+        niv_par_str = f"{float(mapa_aux.get(info['nivel_paro_tq'])):.2f}" if mapa_aux.get(info['nivel_paro_tq']) is not None else ""
+        
+        if row['VALUE'] == 0:
+            apg += 1
+            es_paro_programado = es_periodo_de_paro_programado(t_par, t_arr)
+            
+            nivel_val = float(nivel_act) if nivel_act is not None else 0
+            niv_arr_val = float(niv_arr) if niv_arr is not None else 0
+            niv_par_val = float(mapa_aux.get(info['nivel_paro_tq'], 0)) if mapa_aux.get(info['nivel_paro_tq']) is not None else 0
+            
+            umbral_inferior = niv_arr_val * 0.30
+            
+            es_paro_por_nivel_bajo = (nivel_val < umbral_inferior and niv_arr_val > 0)
+            es_paro_por_nivel_alto = (nivel_val >= niv_par_val and niv_par_val > 0)
+            es_normal_por_nivel = (nivel_val >= umbral_inferior and nivel_val < niv_par_val)
+            
+            if inc.lower().strip() != "sin incidencia":
+                estatus_paro = "⚠️ Parado por incidencia"
+                razon_alerta = inc
+            elif es_paro_programado or es_paro_por_nivel_alto or es_normal_por_nivel:
+                estatus_paro = "✅ Normal"
+                razon_alerta = "Operación normal"
+            elif es_paro_por_nivel_bajo:
+                estatus_paro = "No arranca con su condición de tanque"
+                razon_alerta = "No arranca con su condición de tanque"
+            else:
+                estatus_paro = "❌ Desconocida"
+                razon_alerta = "Estatus desconocido"
+            
+            lista_apg.append({
+                "Pozo": pozo, "Fecha": f, "Hora": h, "Incidencia": inc,
+                "H_paro": t_par.strftime('%H:%M'), "H_arranque": t_arr.strftime('%H:%M'),
+                "Nivel": nivel_act_str, "Niv_Arr": niv_arr_str, "Niv_Par": niv_par_str,
+                "Estatus_Paro": estatus_paro, "V_L1": v1, "V_L2": v2, "V_L3": v3
+            })
+            
+            es_hoy = row['FECHA'].date() == ahora_dt.date()
+            if es_hoy and inc.lower().strip() == "sin incidencia" and razon_alerta != "Operación normal":
+                if es_paro_por_nivel_bajo or estatus_paro == "❌ Desconocida":
+                    if pozo not in st.session_state.alertas_enviadas:
+                        if (ahora_dt - row['FECHA']) > timedelta(minutes=90):
+                            enviar_alerta(pozo, nivel_act_str, niv_arr_str, f, h, t_par.strftime('%H:%M'), t_arr.strftime('%H:%M'), razon_alerta)
+                            st.session_state.alertas_enviadas[pozo] = ahora_dt
+        else:
+            enc += 1
+            lista_enc.append({
+                "Pozo": pozo, "Fecha": f, "Hora": h,
+                "H_paro": t_par.strftime('%H:%M'), "H_arranque": t_arr.strftime('%H:%M'),
+                "Nivel": nivel_act_str, "Niv_Arr": niv_arr_str, "Niv_Par": niv_par_str,
+                "V_L1": v1, "V_L2": v2, "V_L3": v3
+            })
+            if pozo in st.session_state.alertas_enviadas: 
+                del st.session_state.alertas_enviadas[pozo]
+
+    # --- MÉTRICAS SUPERIORES ---
+    col_m1, col_m2 = st.columns(2)
+    with col_m1:
+        st.markdown(f"<h3 style='color: #f44336; text-align: center;'>Apagados: {apg}</h3>", unsafe_allow_html=True)
+    with col_m2:
+        st.markdown(f"<h3 style='color: #4caf50; text-align: center;'>Encendidos: {enc}</h3>", unsafe_allow_html=True)
+
+    st.markdown("---")
+
+    # --- RENDERIZADO DE TABLAS ---
+    col_t1, col_t2 = st.columns(2)
+
+    with col_t1:
+        st.markdown("<h4 style='text-align: center;'>APAGADOS (Atención)</h4>", unsafe_allow_html=True)
+        if lista_apg:
+            df_apg = pd.DataFrame(lista_apg)
+            def color_estatus(val):
+                if "Parado por incidencia" in str(val):
+                    return 'color: #FFD700; font-weight: bold;'
+                elif "Normal" in str(val):
+                    return 'color: #32CD32; font-weight: bold;'
+                else:
+                    return 'color: #FF4500; font-weight: bold;'
+            
+            st.dataframe(df_apg.style.applymap(color_estatus, subset=['Estatus_Paro']), use_container_width=True, hide_index=True)
+        else:
+            st.info("No hay pozos apagados registrados.")
+
+    with col_t2:
+        st.markdown("<h4 style='text-align: center;'>ENCENDIDOS</h4>", unsafe_allow_html=True)
+        if lista_enc:
+            df_enc = pd.DataFrame(lista_enc)
+            st.dataframe(df_enc, use_container_width=True, hide_index=True)
+        else:
+            st.info("No hay pozos encendidos registrados.")
+
+except Exception as e:
+    st.error(f"Error en la ejecución del dashboard: {e}")
