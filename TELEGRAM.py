@@ -36,9 +36,16 @@ def enviar_alerta(pozo, nivel, nivel_arr, hora_alerta, h_paro, h_arranque, razon
     mensaje = f"📢 <b>Reporte Automatico Miaa</b>\n________________________________\n⚠️ <b>Alerta:</b> Bomba Apagada\n📍 <b>Pozo:</b> {pozo}\n⏳ <b>Hora del paro:</b> {hora_paro}\n💧 <b>Nivel Tanque:</b> {nivel} mts.\n↕️ <b>Nivel Arranque con TQ:</b> {nivel_arr} mts.\n⏲️ <b>Horario de Op:</b> {h_paro} - {h_arranque}\n🔍 <b>Motivo:</b> {razon}"
     def send():
         try:
-            with ENGINE_DIC.connect() as conn:
+            engine_dic_bg = create_engine(
+                st.secrets["databases"]["url_dic"], 
+                pool_pre_ping=True, 
+                pool_recycle=300,
+                connect_args={"connect_timeout": 10}
+            )
+            with engine_dic_bg.connect() as conn:
                 df_ids = pd.read_sql("SELECT chart_id FROM Diccionario_telegram WHERE activo = 'Si'", conn)
-            for chat_id in df_ids['chart_id'].tolist(): requests.get(f"https://api.telegram.org/bot{token}/sendMessage", params={'chat_id': chat_id, 'text': mensaje, 'parse_mode': 'HTML'}, timeout=5)
+            for chat_id in df_ids['chart_id'].tolist(): 
+                requests.get(f"https://api.telegram.org/bot{token}/sendMessage", params={'chat_id': chat_id, 'text': mensaje, 'parse_mode': 'HTML'}, timeout=5)
         except: pass
     threading.Thread(target=send, daemon=True).start()
     st.session_state.logs.append(f"[{datetime.now(zona_mx).strftime('%H:%M:%S')}] Alerta enviada: {pozo} - {razon} (Paro: {hora_paro})")
@@ -59,7 +66,12 @@ st.write("""<style>
 </style>""", unsafe_allow_html=True)
 
 @st.cache_resource
-def get_engines(): return create_engine(st.secrets["databases"]["url_dic"], pool_pre_ping=True, pool_recycle=1800), create_engine(st.secrets["databases"]["url_scada"], pool_pre_ping=True, pool_recycle=1800)
+def get_engines(): 
+    return (
+        create_engine(st.secrets["databases"]["url_dic"], pool_pre_ping=True, pool_recycle=300, connect_args={"connect_timeout": 15}), 
+        create_engine(st.secrets["databases"]["url_scada"], pool_pre_ping=True, pool_recycle=300, connect_args={"connect_timeout": 15})
+    )
+
 ENGINE_DIC, ENGINE_SCADA = get_engines()
 
 def convertir_a_hora(valor):
@@ -185,7 +197,7 @@ while True:
                 st.dataframe(df_mostrar.drop(columns=['TS']), use_index=False, use_container_width=True, hide_index=True)
                 
     except SQLAlchemyError as e:
-        st.error(f"Error de conexión con la base de datos: {e}")
+        st.error(f"Error de conexión con la base de datos (Timed Out / No se pudo alcanzar el servidor): {e}")
     except Exception as e:
         st.error(f"Ocurrió un error inesperado: {e}")
         
