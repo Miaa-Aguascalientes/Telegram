@@ -188,40 +188,31 @@ with placeholder_dest.container():
                         st.error(f"Error al actualizar: {ex}")
             with cols_u[4]:
                 if st.button("🗑️ Eliminar", key=f"del_user_{row_user['id']}_{idx}"):
-                    st.session_state.user_to_delete = row_user.to_dict()
+                    st.session_state.user_to_delete = row_user['id']
                     st.rerun()
     else:
         st.info("No se encontraron registros en Diccionario_telegram.")
 
-    # --- VENTANA MODAL / DIÁLOGO DE CONFIRMACIÓN PARA ELIMINAR ---
+    # --- SECCIÓN DIRECTA DE CONFIRMACIÓN PARA EVITAR BLOQUEO ---
     if st.session_state.user_to_delete is not None:
-        u_info = st.session_state.user_to_delete
-        @st.dialog("⚠️ Confirmar eliminación de usuario")
-        def modal_confirmar_eliminacion():
-            st.write(f"Estás a punto de eliminar al usuario **{u_info['nombre']}** (ID: {u_info['id']}).")
-            st.write("Escribe la palabra requerida en el siguiente campo para confirmar:")
-            confirm_word = st.text_input("Escribe la palabra de confirmación", key="input_confirm_delete")
-            
-            c_btn1, c_btn2 = st.columns(2)
-            with c_btn1:
-                if st.button("Confirmar eliminación", type="primary"):
-                    if confirm_word.strip().lower() == "delete":
-                        try:
-                            ejecutar_sql("DELETE FROM Diccionario_telegram WHERE id = :uid", {"uid": u_info['id']})
-                            st.success(f"Usuario {u_info['nombre']} eliminado correctamente.")
-                            st.session_state.user_to_delete = None
-                            t.sleep(1)
-                            st.rerun()
-                        except Exception as ex:
-                            st.error(f"Error al eliminar de la base de datos: {ex}")
-                    else:
-                        st.error("La palabra escrita no coincide. Inténtalo de nuevo.")
-            with c_btn2:
-                if st.button("Cancelar"):
+        uid_Target = st.session_state.user_to_delete
+        st.warning(f"⚠️ Estás a punto de eliminar al usuario con ID: {uid_Target}. Esta acción no se puede deshacer.")
+        
+        c_btn1, c_btn2 = st.columns(2)
+        with c_btn1:
+            if st.button("Sí, confirmar eliminación", type="primary", key="btn_ejecutar_eliminar_def"):
+                try:
+                    ejecutar_sql("DELETE FROM Diccionario_telegram WHERE id = :uid", {"uid": uid_Target})
+                    st.success("Registro eliminado correctamente.")
                     st.session_state.user_to_delete = None
+                    t.sleep(0.5)
                     st.rerun()
-
-        modal_confirmar_eliminacion()
+                except Exception as ex:
+                    st.error(f"Error al eliminar de la base de datos: {ex}")
+        with c_btn2:
+            if st.button("Cancelar", key="btn_cancelar_eliminar_def"):
+                st.session_state.user_to_delete = None
+                st.rerun()
 
 # --- BUCLE ---
 while True:
