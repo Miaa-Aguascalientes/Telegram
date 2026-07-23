@@ -155,7 +155,7 @@ while True:
             elif es_periodo_de_paro_programado(h_p_val, h_a_val) or (n_tq >= n_par and n_par > 0) or (n_tq >= umbral_alerta and n_tq < n_par): 
                 estatus, razon = "✅ Normal", "Operación normal"
             elif n_tq < umbral_alerta and n_arr > 0: 
-                estatus, razon = "❌ No arranca con su condición de tanque", "No arranca con su condicion de nivel de tanque"
+                estatus, razon = "❌ No arranca con su condición de tanque", "No arranca con su condicion de nivel bajo de tanque"
             else: 
                 estatus, razon = "❌ Estatus desconocido", "Estatus desconocido"
             
