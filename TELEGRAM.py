@@ -104,8 +104,8 @@ with c1:
 with c3:
     st.text_input("🔍 Buscar pozo (solo encendidos)...", key='busqueda_pozo')
 
-# --- ESTRUCTURA ---
-col_izq, col_der = st.columns([0.65, 0.35])
+# --- ESTRUCTURA (Ancho modificado para dar espacio a Pozos Apagados) ---
+col_izq, col_der = st.columns([0.80, 0.20])
 with col_izq:
     st.subheader("🔴 Pozos Apagados")
     placeholder_apg = st.empty()
