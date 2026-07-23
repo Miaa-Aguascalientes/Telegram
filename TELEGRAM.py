@@ -104,7 +104,7 @@ with c1:
 with c3:
     st.text_input("🔍 Buscar pozo (solo encendidos)...", key='busqueda_pozo')
 
-# --- ESTRUCTURA (Ancho modificado para dar espacio a Pozos Apagados) ---
+# --- ESTRUCTURA ---
 col_izq, col_der = st.columns([0.80, 0.20])
 with col_izq:
     st.subheader("🔴 Pozos Apagados")
@@ -114,6 +114,7 @@ with col_der:
     placeholder_enc = st.empty()
 
 placeholder_logs = st.empty()
+placeholder_dest = st.empty()
 
 # --- BUCLE ---
 while True:
@@ -123,6 +124,11 @@ while True:
         df_inc['KEY'] = df_inc['NUM_POZO'].astype(str).str.replace(r'[- ]', '', regex=True)
         mapa_inc = dict(zip(df_inc['KEY'], df_inc['DIAGNOSTICO_FALLA']))
     except: mapa_inc = {}
+
+    try:
+        df_destinatarios = obtener_datos("SELECT nombre, chart_id, activo, departamento FROM Diccionario_telegram", ENGINE_DIC)
+    except:
+        df_destinatarios = pd.DataFrame()
 
     tags = "', '".join(df_dic['bomba'].tolist())
     df = obtener_datos(f"SELECT r.NAME, h.VALUE, h.FECHA FROM VfiTagNumHistory_Ultimo h JOIN VfiTagRef r ON h.GATEID = r.GATEID WHERE r.NAME IN ('{tags}') AND h.FECHA = (SELECT MAX(FECHA) FROM VfiTagNumHistory_Ultimo WHERE GATEID = h.GATEID)", ENGINE_SCADA)
@@ -189,5 +195,12 @@ while True:
     with placeholder_logs:
         st.subheader("📋 Registro de Alertas")
         st.markdown(f'<div class="log-console">{"<br>".join(reversed(st.session_state.logs))}</div>', unsafe_allow_html=True)
+
+    with placeholder_dest:
+        st.subheader("👥 Destinatarios de Alertas (Telegram)")
+        if not df_destinatarios.empty:
+            st.dataframe(df_destinatarios, use_container_width=True, hide_index=True)
+        else:
+            st.info("No se encontraron registros en Diccionario_telegram.")
     
     t.sleep(30)
