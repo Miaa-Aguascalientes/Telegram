@@ -146,7 +146,7 @@ try:
 except:
     df_destinatarios = pd.DataFrame()
 
-# --- GESTIÓN DE DESTINATARIOS (Estatica, fuera del bucle de actualización) ---
+# --- GESTIÓN DE DESTINATARIOS (Arriba, en su lugar original) ---
 st.subheader("👥 Gestión de Destinatarios de Alertas (Telegram)")
 
 with st.expander("➕ Añadir nuevo destinatario"):
@@ -235,7 +235,7 @@ if st.session_state.user_to_delete is not None:
 
 st.divider()
 
-# --- FRAGMENTO DE MONITOREO Y TABLAS (Se actualiza automáticamente cada 30 segundos SIN recargar toda la página) ---
+# --- FRAGMENTO DE MONITOREO Y TABLAS DE POZOS (Se actualiza automáticamente cada 30 segundos) ---
 @st.fragment(run_every=30)
 def monitor_pozos_fragment():
     col_izq, col_der = st.columns([0.80, 0.20])
@@ -408,5 +408,5 @@ def monitor_pozos_fragment():
         st.subheader("📋 Registro de Alertas")
         st.markdown(f'<div class="log-console">{"<br>".join(reversed(st.session_state.logs))}</div>', unsafe_allow_html=True)
 
-# Llamada al fragmento aislado
+# Ejecución del fragmento en su ubicación correcta
 monitor_pozos_fragment()
