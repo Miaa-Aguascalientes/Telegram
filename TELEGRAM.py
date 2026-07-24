@@ -260,8 +260,8 @@ while True:
     tags = "', '".join(df_dic['bomba'].tolist())
     df = obtener_datos(f"SELECT r.NAME, h.VALUE, h.FECHA FROM VfiTagNumHistory_Ultimo h JOIN VfiTagRef r ON h.GATEID = r.GATEID WHERE r.NAME IN ('{tags}') AND h.FECHA = (SELECT MAX(FECHA) FROM VfiTagNumHistory_Ultimo WHERE GATEID = h.GATEID)", "scada")
     
-    # Recolectar tags auxiliares incluyendo corrientes L1, L2, L3 para análisis de desbalance histórico semanal
-    cols_corrientes = ['corriente_L1', 'corriente_L2', 'corriente_L3']
+    # Recolectar tags auxiliares incluyendo amperaje_L1, amperaje_L2, amperaje_L3 para análisis de desbalance histórico semanal
+    cols_corrientes = ['amperaje_L1', 'amperaje_L2', 'amperaje_L3']
     tags_aux_cols = ['H_arranque', 'H_paro', 'nivel_tanque', 'nivel_arranque_tq', 'nivel_paro_tq', 'voltaje_L1', 'voltaje_L2', 'voltaje_L3'] + [c for c in cols_corrientes if c in df_dic.columns]
     
     tags_aux = [str(t) for col in tags_aux_cols for t in df_dic[col].dropna().unique() if str(t).strip() != '']
@@ -278,7 +278,7 @@ while True:
     
     tags_corr_list = []
     for _, d_row in df_dic.iterrows():
-        for c_col in ['corriente_L1', 'corriente_L2', 'corriente_L3']:
+        for c_col in ['amperaje_L1', 'amperaje_L2', 'amperaje_L3']:
             if c_col in d_row and pd.notnull(d_row[c_col]) and str(d_row[c_col]).strip() != '':
                 tags_corr_list.append(str(d_row[c_col]))
     
@@ -308,9 +308,9 @@ while True:
         n_tq, n_arr, n_par = float(mapa_aux.get(str(info.get('nivel_tanque', '')), 0) or 0), float(mapa_aux.get(str(info.get('nivel_arranque_tq', '')), 0) or 0), float(mapa_aux.get(str(info.get('nivel_paro_tq', '')), 0) or 0)
         h_p_val, h_a_val = convertir_a_hora(mapa_aux.get(str(info.get('H_paro', '')))), convertir_a_hora(mapa_aux.get(str(info.get('H_arranque', ''))))
         
-        tag_l1 = str(info.get('corriente_L1', ''))
-        tag_l2 = str(info.get('corriente_L2', ''))
-        tag_l3 = str(info.get('corriente_L3', ''))
+        tag_l1 = str(info.get('amperaje_L1', ''))
+        tag_l2 = str(info.get('amperaje_L2', ''))
+        tag_l3 = str(info.get('amperaje_L3', ''))
         
         a1_val = float(mapa_semanal_prom.get(tag_l1, 0) or 0) if tag_l1 else 0.0
         a2_val = float(mapa_semanal_prom.get(tag_l2, 0) or 0) if tag_l2 else 0.0
