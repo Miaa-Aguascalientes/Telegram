@@ -412,4 +412,4 @@ with placeholder_logs:
 
 # --- AUTOREFRESH CADA 30 SEGUNDOS ---
 t.sleep(30)
-st.rerun()
+
