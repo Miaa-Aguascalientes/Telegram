@@ -19,7 +19,7 @@ if 'user_to_delete' not in st.session_state: st.session_state.user_to_delete = N
 
 zona_mx = ZoneInfo("America/Mexico_City")
 
-# --- CONEXIÓN ROBUSTA USANDO SECRETS ---
+# --- CONEXIÓN ROBUSTA Y RECONEXIÓN AUTOMÁTICA ---
 @st.cache_resource
 def get_engines(): 
     engine_dic = create_engine(
@@ -34,18 +34,47 @@ def get_engines():
 
 ENGINE_DIC, ENGINE_SCADA = get_engines()
 
-# --- FUNCIONES AUXILIARES DE CONSULTA ---
-def obtener_datos(query, engine):
-    try: 
-        return pd.read_sql(query, engine)
-    except Exception: 
-        engine.dispose()
-        return pd.read_sql(query, engine)
+def obtener_datos(query, engine_tipo="dic", max_retries=3):
+    """Ejecuta consultas con reintento automático ante desconexiones."""
+    global ENGINE_DIC, ENGINE_SCADA
+    engine = ENGINE_DIC if engine_tipo == "dic" else ENGINE_SCADA
+    
+    for intento in range(max_retries):
+        try:
+            return pd.read_sql(query, engine)
+        except Exception as e:
+            if intento < max_retries - 1:
+                try:
+                    engine.dispose()
+                except:
+                    pass
+                # Forzar recreación de motores si falla la conexión
+                ENGINE_DIC, ENGINE_SCADA = get_engines()
+                engine = ENGINE_DIC if engine_tipo == "dic" else ENGINE_SCADA
+                t.sleep(2)
+            else:
+                st.error(f"Error de conexión a la base de datos tras varios intentos: {e}")
+                return pd.DataFrame()
 
-def ejecutar_sql(query, params=None):
-    with ENGINE_DIC.connect() as conn:
-        with conn.begin():
-            conn.execute(text(query) if isinstance(query, str) else query, params or {})
+def ejecutar_sql(query, params=None, max_retries=3):
+    """Ejecuta sentencias SQL (INSERT/UPDATE/DELETE) con reconexión automática."""
+    global ENGINE_DIC
+    for intento in range(max_retries):
+        try:
+            with ENGINE_DIC.connect() as conn:
+                with conn.begin():
+                    conn.execute(text(query) if isinstance(query, str) else query, params or {})
+            return True
+        except Exception as e:
+            if intento < max_retries - 1:
+                try:
+                    ENGINE_DIC.dispose()
+                except:
+                    pass
+                _, ENGINE_SCADA = get_engines()
+                t.sleep(2)
+            else:
+                raise e
 
 # --- FUNCIONES ---
 def es_periodo_de_paro_programado(t_par, t_arr):
@@ -64,7 +93,7 @@ def enviar_alerta(pozo, nivel, nivel_arr, hora_alerta, h_paro, h_arranque, razon
     mensaje = f"📢 <b>Reporte Automatico Miaa</b>\n________________________________\n⚠️ <b>Alerta:</b> Bomba Apagada\n📍 <b>Pozo:</b> {pozo}\n⏳ <b>Hora del paro:</b> {hora_paro}\n💧 <b>Nivel Tanque:</b> {nivel} mts.\n↕️ <b>Nivel Arranque con TQ:</b> {nivel_arr} mts.\n⏲️ <b>Horario de Op:</b> {h_paro} - {h_arranque}\n🔍 <b>Motivo:</b> {razon}"
     def send():
         try:
-            df_ids = obtener_datos("SELECT chart_id FROM Diccionario_telegram WHERE activo = 'Si'", ENGINE_DIC)
+            df_ids = obtener_datos("SELECT chart_id FROM Diccionario_telegram WHERE activo = 'Si'", "dic")
             for chat_id in df_ids['chart_id'].tolist(): 
                 requests.get(f"https://api.telegram.org/bot{token}/sendMessage", params={'chat_id': chat_id, 'text': mensaje, 'parse_mode': 'HTML'}, timeout=5)
         except: pass
@@ -123,10 +152,10 @@ placeholder_logs = st.empty()
 placeholder_dest = st.empty()
 
 # --- CARGA DE DATOS GENERALES ---
-df_dic = obtener_datos("SELECT * FROM Diccionario_de_pozos WHERE bomba != 'Sin telemetria'", ENGINE_DIC)
+df_dic = obtener_datos("SELECT * FROM Diccionario_de_pozos WHERE bomba != 'Sin telemetria'", "dic")
 
 try:
-    df_destinatarios = obtener_datos("SELECT id, nombre, chart_id, activo, departamento FROM Diccionario_telegram", ENGINE_DIC)
+    df_destinatarios = obtener_datos("SELECT id, nombre, chart_id, activo, departamento FROM Diccionario_telegram", "dic")
 except:
     df_destinatarios = pd.DataFrame()
 
@@ -142,13 +171,13 @@ with placeholder_dest.container():
             with f_col2:
                 nuevo_chart = st.text_input("Chart ID (Telegram)", key="input_nuevo_chart")
             with f_col3:
-                nuevo_depto = st.text_input("Departamento", value="", key="input_nuevo_depto")
+                nuevo_depto = st.text_input("Departamento", value="Planeacion Tecnica", key="input_nuevo_depto")
             
             btn_crear = st.form_submit_button("Guardar Usuario")
             if btn_crear:
                 if nuevo_nombre and nuevo_chart:
                     try:
-                        df_max_id = obtener_datos("SELECT MAX(CAST(id AS UNSIGNED)) as max_id FROM Diccionario_telegram", ENGINE_DIC)
+                        df_max_id = obtener_datos("SELECT MAX(CAST(id AS UNSIGNED)) as max_id FROM Diccionario_telegram", "dic")
                         siguiente_id = 1
                         if not df_max_id.empty and pd.notnull(df_max_id.iloc[0]['max_id']):
                             siguiente_id = int(df_max_id.iloc[0]['max_id']) + 1
@@ -193,19 +222,17 @@ with placeholder_dest.container():
     else:
         st.info("No se encontraron registros en Diccionario_telegram.")
 
-    # --- SECCIÓN DIRECTA DE CONFIRMACIÓN PARA EVITAR BLOQUEO ---
+    # --- SECCIÓN DIRECTA DE CONFIRMACIÓN CON VALIDACIÓN DE PALABRA ---
     if st.session_state.user_to_delete is not None:
         uid_Target = st.session_state.user_to_delete
         st.warning(f"⚠️ Estás a punto de eliminar al usuario con ID: {uid_Target}. Esta acción no se puede deshacer.")
         
-        # Campo para ingresar la palabra de confirmación
-        confirm_text = st.text_input("Para confirmar, escribe la palabra **DELETE** en mayúsculas:", key="input_confirm_delete")
+        confirm_text = st.text_input("Para confirmar, escribe la palabra requerida en el siguiente campo:", key="input_confirm_delete")
         
         c_btn1, c_btn2 = st.columns(2)
         with c_btn1:
-            # El botón solo se habilita o procesa si el texto coincide exactamente con 'DELETE'
             if st.button("Sí, confirmar eliminación", type="primary", key="btn_ejecutar_eliminar_def"):
-                if confirm_text.strip() == "DELETE":
+                if confirm_text.strip().lower() == "delete":
                     try:
                         ejecutar_sql("DELETE FROM Diccionario_telegram WHERE id = :uid", {"uid": uid_Target})
                         st.success("Registro eliminado correctamente.")
@@ -215,7 +242,7 @@ with placeholder_dest.container():
                     except Exception as ex:
                         st.error(f"Error al eliminar de la base de datos: {ex}")
                 else:
-                    st.error("La palabra ingresada no coincide. Debes escribir exactamente **DELETE** para confirmar.")
+                    st.error("La palabra ingresada no coincide. Inténtalo de nuevo.")
         with c_btn2:
             if st.button("Cancelar", key="btn_cancelar_eliminar_def"):
                 st.session_state.user_to_delete = None
@@ -224,15 +251,15 @@ with placeholder_dest.container():
 # --- BUCLE ---
 while True:
     try:
-        df_inc = obtener_datos("SELECT NUM_POZO, DIAGNOSTICO_FALLA FROM vw_incidencias_en_pozos WHERE ESTATUS != 'Cerrada'", ENGINE_SCADA)
+        df_inc = obtener_datos("SELECT NUM_POZO, DIAGNOSTICO_FALLA FROM vw_incidencias_en_pozos WHERE ESTATUS != 'Cerrada'", "scada")
         df_inc['KEY'] = df_inc['NUM_POZO'].astype(str).str.replace(r'[- ]', '', regex=True)
         mapa_inc = dict(zip(df_inc['KEY'], df_inc['DIAGNOSTICO_FALLA']))
     except: mapa_inc = {}
 
     tags = "', '".join(df_dic['bomba'].tolist())
-    df = obtener_datos(f"SELECT r.NAME, h.VALUE, h.FECHA FROM VfiTagNumHistory_Ultimo h JOIN VfiTagRef r ON h.GATEID = r.GATEID WHERE r.NAME IN ('{tags}') AND h.FECHA = (SELECT MAX(FECHA) FROM VfiTagNumHistory_Ultimo WHERE GATEID = h.GATEID)", ENGINE_SCADA)
+    df = obtener_datos(f"SELECT r.NAME, h.VALUE, h.FECHA FROM VfiTagNumHistory_Ultimo h JOIN VfiTagRef r ON h.GATEID = r.GATEID WHERE r.NAME IN ('{tags}') AND h.FECHA = (SELECT MAX(FECHA) FROM VfiTagNumHistory_Ultimo WHERE GATEID = h.GATEID)", "scada")
     tags_aux = [str(t) for col in ['H_arranque', 'H_paro', 'nivel_tanque', 'nivel_arranque_tq', 'nivel_paro_tq', 'voltaje_L1', 'voltaje_L2', 'voltaje_L3'] for t in df_dic[col].dropna().unique()]
-    df_h = obtener_datos(f"SELECT r.NAME, h.VALUE FROM VfiTagNumHistory_Ultimo h JOIN VfiTagRef r ON h.GATEID = r.GATEID WHERE r.NAME IN ('{"', '".join(tags_aux)}') AND h.FECHA = (SELECT MAX(FECHA) FROM VfiTagNumHistory_Ultimo WHERE GATEID = h.GATEID)", ENGINE_SCADA)
+    df_h = obtener_datos(f"SELECT r.NAME, h.VALUE FROM VfiTagNumHistory_Ultimo h JOIN VfiTagRef r ON h.GATEID = r.GATEID WHERE r.NAME IN ('{"', '".join(tags_aux)}') AND h.FECHA = (SELECT MAX(FECHA) FROM VfiTagNumHistory_Ultimo WHERE GATEID = h.GATEID)", "scada")
     mapa_aux = dict(zip(df_h['NAME'].astype(str), df_h['VALUE']))
 
     lista_apg, lista_enc = [], []
