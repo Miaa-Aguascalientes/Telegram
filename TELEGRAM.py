@@ -313,8 +313,22 @@ def monitor_pozos_fragment():
     df_mostrar_amps = df_enc_amps
     if st.session_state.busqueda_pozo and not df_enc_amps.empty:
         df_mostrar_amps = df_enc_amps[df_enc_amps['Pozo'].astype(str).str.contains(st.session_state.busqueda_pozo, case=False, na=False)]
+    
     if not df_mostrar_amps.empty:
-        st.dataframe(df_mostrar_amps, use_container_width=True, hide_index=True)
+        def color_fila_amperajes(df_subset):
+            """Pinta los primeros 5 en rojo, los siguientes 10 en amarillo y el resto en verde."""
+            estilos = []
+            for i in range(len(df_subset)):
+                if i < 5:
+                    c = '#FF0000'  # 5 más graves (Rojo)
+                elif i < 15:
+                    c = '#FFD700'  # 10 medio graves (Amarillo)
+                else:
+                    c = '#00FF00'  # Demás (Verde)
+                estilos.append([f'color: {c}'] * len(df_subset.columns))
+            return pd.DataFrame(estilos, index=df_subset.index, columns=df_subset.columns)
+
+        st.dataframe(df_mostrar_amps.style.apply(color_fila_amperajes, axis=None).set_properties(**{'text-align': 'center'}), use_container_width=True, hide_index=True)
     else:
         st.info("No hay datos de corriente disponibles para los pozos encendidos.")
         
