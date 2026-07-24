@@ -259,8 +259,8 @@ while True:
     tags = "', '".join(df_dic['bomba'].tolist())
     df = obtener_datos(f"SELECT r.NAME, h.VALUE, h.FECHA FROM VfiTagNumHistory_Ultimo h JOIN VfiTagRef r ON h.GATEID = r.GATEID WHERE r.NAME IN ('{tags}') AND h.FECHA = (SELECT MAX(FECHA) FROM VfiTagNumHistory_Ultimo WHERE GATEID = h.GATEID)", "scada")
     
-    # Recolectar tags auxiliares incluyendo corriente L1, L2, L3 y amperaje nominal si existen en el diccionario
-    cols_corrientes = ['corriente_L1', 'corriente_L2', 'corriente_L3', 'amperaje_nominal']
+    # Recolectar tags auxiliares incluyendo corrientes L1, L2, L3 para análisis de desbalance histórico semanal
+    cols_corrientes = ['corriente_L1', 'corriente_L2', 'corriente_L3']
     tags_aux_cols = ['H_arranque', 'H_paro', 'nivel_tanque', 'nivel_arranque_tq', 'nivel_paro_tq', 'voltaje_L1', 'voltaje_L2', 'voltaje_L3'] + [c for c in cols_corrientes if c in df_dic.columns]
     
     tags_aux = [str(t) for col in tags_aux_cols for t in df_dic[col].dropna().unique() if str(t).strip() != '']
@@ -270,7 +270,32 @@ while True:
         df_h = obtener_datos(f"SELECT r.NAME, h.VALUE FROM VfiTagNumHistory_Ultimo h JOIN VfiTagRef r ON h.GATEID = r.GATEID WHERE r.NAME IN ('{"', '".join(tags_aux)}') AND h.FECHA = (SELECT MAX(FECHA) FROM VfiTagNumHistory_Ultimo WHERE GATEID = h.GATEID)", "scada")
     mapa_aux = dict(zip(df_h['NAME'].astype(str), df_h['VALUE'])) if not df_h.empty else {}
 
-    lista_apg, lista_enc, lista_corrientes_peligro = [], [], []
+    # Consulta de promedios históricos de la última semana de VfiTagNumHistory para las corrientes de cada pozo
+    lista_corrientes_desbalance = []
+    fecha_hace_7_dias = datetime.now(zona_mx) - timedelta(days=7)
+    
+    tags_corr_list = []
+    for _, d_row in df_dic.iterrows():
+        for c_col in ['corriente_L1', 'corriente_L2', 'corriente_L3']:
+            if c_col in d_row and pd.notnull(d_row[c_col]) and str(d_row[c_col]).strip() != '':
+                tags_corr_list.append(str(d_row[c_col]))
+    
+    mapa_semanal_prom = {}
+    if tags_corr_list:
+        tags_str_sql = "', '".join(list(set(tags_corr_list)))
+        query_semanal = f"""
+            SELECT r.NAME, AVG(h.VALUE) as PROMEDIO_VAL
+            FROM VfiTagNumHistory h 
+            JOIN VfiTagRef r ON h.GATEID = r.GATEID 
+            WHERE r.NAME IN ('{tags_str_sql}') 
+              AND h.FECHA >= '{fecha_hace_7_dias.strftime('%Y-%m-%d %H:%M:%S')}'
+            GROUP BY r.NAME
+        """
+        df_hist_semanal = obtener_datos(query_semanal, "scada")
+        if not df_hist_semanal.empty:
+            mapa_semanal_prom = dict(zip(df_hist_semanal['NAME'].astype(str), df_hist_semanal['PROMEDIO_VAL']))
+
+    lista_apg, lista_enc = [], []
     ahora_actual = datetime.now(zona_mx)
 
     for _, row in df.iterrows():
@@ -281,33 +306,31 @@ while True:
         n_tq, n_arr, n_par = float(mapa_aux.get(str(info.get('nivel_tanque', '')), 0) or 0), float(mapa_aux.get(str(info.get('nivel_arranque_tq', '')), 0) or 0), float(mapa_aux.get(str(info.get('nivel_paro_tq', '')), 0) or 0)
         h_p_val, h_a_val = convertir_a_hora(mapa_aux.get(str(info.get('H_paro', '')))), convertir_a_hora(mapa_aux.get(str(info.get('H_arranque', ''))))
         
-        # Verificación de corrientes (L1, L2, L3)
-        c_l1 = float(mapa_aux.get(str(info.get('corriente_L1', '')), 0) or 0) if 'corriente_L1' in info and pd.notnull(info['corriente_L1']) else 0.0
-        c_l2 = float(mapa_aux.get(str(info.get('corriente_L2', '')), 0) or 0) if 'corriente_L2' in info and pd.notnull(info['corriente_L2']) else 0.0
-        c_l3 = float(mapa_aux.get(str(info.get('corriente_L3', '')), 0) or 0) if 'corriente_L3' in info and pd.notnull(info['corriente_L3']) else 0.0
-        amp_nom = float(info.get('amperaje_nominal', 0) or 0) if 'amperaje_nominal' in info and pd.notnull(info['amperaje_nominal']) else 0.0
-
-        # Criterio de peligro por corriente: si supera un 15% más del nominal, o si alguna supera el umbral crítico por fase
-        # Si no hay amperaje nominal en BD, evaluamos si alguna línea excede significativamente o si se comparan individualmente.
-        # Aquí evaluamos si hay un incremento del 15% respecto al nominal registrado, o bien una subida de corriente general en las fases.
-        en_peligro = False
-        if amp_nom > 0:
-            if c_l1 > (amp_nom * 1.15) or c_l2 > (amp_nom * 1.15) or c_l3 > (amp_nom * 1.15):
-                en_peligro = True
-        else:
-            # Si no hay nominal, evaluamos si el promedio de las fases o alguna fase individual muestra picos elevados (ej. si L1, L2, L3 superan un comportamiento estandar o entre ellas desbalance, o un valor de referencia alto). Como criterio seguro con el 15%, si tenemos un valor base o si cualquiera supera un límite operativo base. Si no se cuenta con nominal fijo, evaluamos un incremento comparativo o disipación. Para cumplir estrictamente el incremento del 15% cuando hay un valor de referencia o promedio:
-            prom_fases = (c_l1 + c_l2 + c_l3) / 3 if (c_l1 + c_l2 + c_l3) > 0 else 0
-            if prom_fases > 0 and (c_l1 > prom_fases * 1.15 or c_l2 > prom_fases * 1.15 or c_l3 > prom_fases * 1.15):
-                en_peligro = True
-
-        if row['VALUE'] != 0 and en_peligro:
-            lista_corrientes_peligro.append({
-                "Pozo": info['Pozos'],
-                "Amperaje L1": f"{c_l1:.2f} A",
-                "Amperaje L2": f"{c_l2:.2f} A",
-                "Amperaje L3": f"{c_l3:.2f} A",
-                "Nominal / Ref": f"{amp_nom:.2f} A" if amp_nom > 0 else "N/D"
-            })
+        # Obtener valores semanales promedio de las tres líneas de amperaje para el análisis de desbalance (> 11%)
+        tag_l1 = str(info.get('corriente_L1', ''))
+        tag_l2 = str(info.get('corriente_L2', ''))
+        tag_l3 = str(info.get('corriente_L3', ''))
+        
+        a1_val = float(mapa_semanal_prom.get(tag_l1, 0) or 0) if tag_l1 else 0.0
+        a2_val = float(mapa_semanal_prom.get(tag_l2, 0) or 0) if tag_l2 else 0.0
+        a3_val = float(mapa_semanal_prom.get(tag_l3, 0) or 0) if tag_l3 else 0.0
+        
+        if a1_val > 0 or a2_val > 0 or a3_val > 0:
+            prom_fases = (a1_val + a2_val + a3_val) / 3.0 if (a1_val + a2_val + a3_val) > 0 else 1.0
+            # Calcular desbalance máximo de cualquiera de las líneas respecto al promedio o entre ellas (> 11%)
+            desb_l1 = abs(a1_val - prom_fases) / prom_fases * 100 if prom_fases > 0 else 0.0
+            desb_l2 = abs(a2_val - prom_fases) / prom_fases * 100 if prom_fases > 0 else 0.0
+            desb_l3 = abs(a3_val - prom_fases) / prom_fases * 100 if prom_fases > 0 else 0.0
+            max_desb = max(desb_l1, desb_l2, desb_l3)
+            
+            if max_desb >= 11.0:
+                lista_corrientes_desbalance.append({
+                    "Pozo": info['Pozos'],
+                    "A1 (Avg)": f"{a1_val:.2f} A",
+                    "A2 (Avg)": f"{a2_val:.2f} A",
+                    "A3 (Avg)": f"{a3_val:.2f} A",
+                    "Desb. A1 (%)": f"{max_desb:.2f}%"
+                })
 
         fecha_bd = row['FECHA']
         if pd.notnull(fecha_bd):
@@ -338,7 +361,7 @@ while True:
 
     df_final = pd.DataFrame(lista_apg).sort_values(by='TS', ascending=False) if lista_apg else pd.DataFrame()
     df_enc_full = pd.DataFrame(lista_enc).sort_values(by='TS', ascending=False) if lista_enc else pd.DataFrame()
-    df_peligro_corr = pd.DataFrame(lista_corrientes_peligro) if lista_corrientes_peligro else pd.DataFrame()
+    df_desb_corr = pd.DataFrame(lista_corrientes_desbalance) if lista_corrientes_desbalance else pd.DataFrame()
     
     with placeholder_apg:
         if not df_final.empty:
@@ -356,11 +379,11 @@ while True:
             st.dataframe(df_mostrar.drop(columns=['TS']), use_container_width=True, hide_index=True)
 
     with placeholder_corrientes:
-        st.subheader("⚡ Alerta de Pozos en Peligro por Incremento de Corriente (> 15%)")
-        if not df_peligro_corr.empty:
-            st.dataframe(df_peligro_corr, use_container_width=True, hide_index=True)
+        st.subheader("⚡ Análisis de Desbalance de Corrientes (Promedio Última Semana)")
+        if not df_desb_corr.empty:
+            st.dataframe(df_desb_corr, use_container_width=True, hide_index=True)
         else:
-            st.success("No hay pozos en riesgo por sobrecorriente en este momento.")
+            st.success("No hay pozos con desbalance de corriente superior al 11% en el promedio semanal.")
             
     with placeholder_logs:
         st.subheader("📋 Registro de Alertas")
