@@ -150,6 +150,7 @@ with col_der:
 placeholder_logs = st.empty()
 placeholder_dest = st.empty()
 placeholder_corrientes = st.empty()
+placeholder_enc_amps = st.empty()
 
 # --- CARGA DE DATOS GENERALES ---
 df_dic = obtener_datos("SELECT * FROM Diccionario_de_pozos WHERE bomba != 'Sin telemetria'", "dic")
@@ -322,7 +323,7 @@ while True:
             desb_l3 = abs(a3_val - prom_fases) / prom_fases * 100 if prom_fases > 0 else 0.0
             max_desb = max(desb_l1, desb_l2, desb_l3)
             
-            # Si el pozo está encendido, lo agregamos a la tabla de pozos encendidos con sus amperajes y desbalance
+            # Si el pozo está encendido, lo agregamos a la tabla inferior de corrientes de encendidos
             if row['VALUE'] != 0:
                 lista_corrientes_encendidos.append({
                     "Pozo": info['Pozos'],
@@ -371,6 +372,7 @@ while True:
             lista_enc.append({"Pozo": info['Pozos'], "Fecha": row['FECHA'].date(), "Hora": row['FECHA'].time(), "TS": row['FECHA']})
 
     df_final = pd.DataFrame(lista_apg).sort_values(by='TS', ascending=False) if lista_apg else pd.DataFrame()
+    df_enc_full = pd.DataFrame(lista_enc).sort_values(by='TS', ascending=False) if lista_enc else pd.DataFrame()
     df_enc_amps = pd.DataFrame(lista_corrientes_encendidos).sort_values(by='Pozo') if lista_corrientes_encendidos else pd.DataFrame()
     df_desb_corr = pd.DataFrame(lista_corrientes_desbalance) if lista_corrientes_desbalance else pd.DataFrame()
     
@@ -383,13 +385,11 @@ while True:
             st.dataframe(df_final.drop(columns=['TS']).style.apply(color_fila, axis=1).set_properties(**{'text-align': 'center'}), use_container_width=True, hide_index=True)
     
     with placeholder_enc:
-        df_mostrar = df_enc_amps
-        if st.session_state.busqueda_pozo and not df_enc_amps.empty:
-            df_mostrar = df_enc_amps[df_enc_amps['Pozo'].astype(str).str.contains(st.session_state.busqueda_pozo, case=False, na=False)]
+        df_mostrar = df_enc_full
+        if st.session_state.busqueda_pozo:
+            df_mostrar = df_enc_full[df_enc_full['Pozo'].astype(str).str.contains(st.session_state.busqueda_pozo, case=False, na=False)]
         if not df_mostrar.empty: 
-            st.dataframe(df_mostrar, use_container_width=True, hide_index=True)
-        else:
-            st.info("No hay pozos encendidos con datos de corriente disponibles.")
+            st.dataframe(df_mostrar.drop(columns=['TS']), use_container_width=True, hide_index=True)
 
     with placeholder_corrientes:
         st.subheader("⚡ Análisis de Desbalance de Corrientes (Promedio Última Semana - Umbral > 11%)")
@@ -397,6 +397,16 @@ while True:
             st.dataframe(df_desb_corr, use_container_width=True, hide_index=True)
         else:
             st.success("No hay pozos con desbalance de corriente superior al 11% en el promedio semanal.")
+
+    with placeholder_enc_amps:
+        st.subheader("📊 Pozos Encendidos y sus Amperajes (Promedio Semanal)")
+        df_mostrar_amps = df_enc_amps
+        if st.session_state.busqueda_pozo and not df_enc_amps.empty:
+            df_mostrar_amps = df_enc_amps[df_enc_amps['Pozo'].astype(str).str.contains(st.session_state.busqueda_pozo, case=False, na=False)]
+        if not df_mostrar_amps.empty:
+            st.dataframe(df_mostrar_amps, use_container_width=True, hide_index=True)
+        else:
+            st.info("No hay datos de corriente disponibles para los pozos encendidos.")
             
     with placeholder_logs:
         st.subheader("📋 Registro de Alertas")
