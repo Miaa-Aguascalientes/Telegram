@@ -249,186 +249,184 @@ with placeholder_dest.container():
                 st.session_state.user_to_delete = None
                 st.rerun()
 
-# --- BUCLE ---
-while True:
-    try:
-        df_inc = obtener_datos("SELECT NUM_POZO, DIAGNOSTICO_FALLA FROM vw_incidencias_en_pozos WHERE ESTATUS != 'Cerrada'", "scada")
-        df_inc['KEY'] = df_inc['NUM_POZO'].astype(str).str.replace(r'[- ]', '', regex=True)
-        mapa_inc = dict(zip(df_inc['KEY'], df_inc['DIAGNOSTICO_FALLA']))
-    except: mapa_inc = {}
+# --- CICLO ÚNICO DE EJECUCIÓN (SIN WHILE TRUE BLOQUEANTE) ---
+try:
+    df_inc = obtener_datos("SELECT NUM_POZO, DIAGNOSTICO_FALLA FROM vw_incidencias_en_pozos WHERE ESTATUS != 'Cerrada'", "scada")
+    df_inc['KEY'] = df_inc['NUM_POZO'].astype(str).str.replace(r'[- ]', '', regex=True)
+    mapa_inc = dict(zip(df_inc['KEY'], df_inc['DIAGNOSTICO_FALLA']))
+except: mapa_inc = {}
 
-    tags = "', '".join(df_dic['bomba'].tolist())
-    df = obtener_datos(f"SELECT r.NAME, h.VALUE, h.FECHA FROM VfiTagNumHistory_Ultimo h JOIN VfiTagRef r ON h.GATEID = r.GATEID WHERE r.NAME IN ('{tags}') AND h.FECHA = (SELECT MAX(FECHA) FROM VfiTagNumHistory_Ultimo WHERE GATEID = h.GATEID)", "scada")
+tags = "', '".join(df_dic['bomba'].tolist())
+df = obtener_datos(f"SELECT r.NAME, h.VALUE, h.FECHA FROM VfiTagNumHistory_Ultimo h JOIN VfiTagRef r ON h.GATEID = r.GATEID WHERE r.NAME IN ('{tags}') AND h.FECHA = (SELECT MAX(FECHA) FROM VfiTagNumHistory_Ultimo WHERE GATEID = h.GATEID)", "scada")
+
+# Recolectar tags auxiliares incluyendo amperaje_L1, amperaje_L2, amperaje_L3 y realizando fragmentación por lotes para evitar sobrepasar límites de parámetros en MySQL
+cols_corrientes = ['amperaje_L1', 'amperaje_L2', 'amperaje_L3']
+tags_aux_cols = ['H_arranque', 'H_paro', 'nivel_tanque', 'nivel_arranque_tq', 'nivel_paro_tq', 'voltaje_L1', 'voltaje_L2', 'voltaje_L3'] + [c for c in cols_corrientes if c in df_dic.columns]
+
+tags_aux = list(set([str(t) for col in tags_aux_cols for t in df_dic[col].dropna().unique() if str(t).strip() != '']))
+
+df_h = pd.DataFrame()
+if tags_aux:
+    lotes_aux = [tags_aux[i:i + 100] for i in range(0, len(tags_aux), 100)]
+    lista_df_h = []
+    for lote in lotes_aux:
+        tags_str_lote = "', '".join(lote)
+        df_lote = obtener_datos(f"SELECT r.NAME, h.VALUE FROM VfiTagNumHistory_Ultimo h JOIN VfiTagRef r ON h.GATEID = r.GATEID WHERE r.NAME IN ('{tags_str_lote}') AND h.FECHA = (SELECT MAX(FECHA) FROM VfiTagNumHistory_Ultimo WHERE GATEID = h.GATEID)", "scada")
+        if not df_lote.empty:
+            lista_df_h.append(df_lote)
+    if lista_df_h:
+        df_h = pd.concat(lista_df_h, ignore_index=True)
+
+mapa_aux = dict(zip(df_h['NAME'].astype(str), df_h['VALUE'])) if not df_h.empty else {}
+
+# Consulta por lotes de promedios históricos de la última semana de VfiTagNumHistory para las corrientes de cada pozo
+lista_corrientes_desbalance = []
+lista_corrientes_encendidos = []
+fecha_hace_7_dias = datetime.now(zona_mx) - timedelta(days=7)
+
+tags_corr_list = []
+for _, d_row in df_dic.iterrows():
+    for c_col in ['amperaje_L1', 'amperaje_L2', 'amperaje_L3']:
+        if c_col in d_row and pd.notnull(d_row[c_col]) and str(d_row[c_col]).strip() != '':
+            tags_corr_list.append(str(d_row[c_col]))
+
+mapa_semanal_prom = {}
+tags_corr_unicos = list(set(tags_corr_list))
+if tags_corr_unicos:
+    lotes_corr = [tags_corr_unicos[i:i + 100] for i in range(0, len(tags_corr_unicos), 100)]
+    lista_df_hist = []
+    for lote in lotes_corr:
+        tags_str_sql = "', '".join(lote)
+        query_semanal = f"""
+            SELECT r.NAME, AVG(h.VALUE) as PROMEDIO_VAL
+            FROM VfiTagNumHistory h 
+            JOIN VfiTagRef r ON h.GATEID = r.GATEID 
+            WHERE r.NAME IN ('{tags_str_sql}') 
+              AND h.FECHA >= '{fecha_hace_7_dias.strftime('%Y-%m-%d %H:%M:%S')}'
+            GROUP BY r.NAME
+        """
+        df_hist_lote = obtener_datos(query_semanal, "scada")
+        if not df_hist_lote.empty:
+            lista_df_hist.append(df_hist_lote)
     
-    # Recolectar tags auxiliares incluyendo amperaje_L1, amperaje_L2, amperaje_L3 y realizando fragmentación por lotes para evitar sobrepasar límites de parámetros en MySQL
-    cols_corrientes = ['amperaje_L1', 'amperaje_L2', 'amperaje_L3']
-    tags_aux_cols = ['H_arranque', 'H_paro', 'nivel_tanque', 'nivel_arranque_tq', 'nivel_paro_tq', 'voltaje_L1', 'voltaje_L2', 'voltaje_L3'] + [c for c in cols_corrientes if c in df_dic.columns]
+    if lista_df_hist:
+        df_hist_semanal = pd.concat(lista_df_hist, ignore_index=True)
+        mapa_semanal_prom = dict(zip(df_hist_semanal['NAME'].astype(str), df_hist_semanal['PROMEDIO_VAL']))
+
+lista_apg, lista_enc = [], []
+ahora_actual = datetime.now(zona_mx)
+
+for _, row in df.iterrows():
+    df_match = df_dic[df_dic['bomba'] == row['NAME']]
+    if df_match.empty: continue
+    info = df_match.iloc[0]
+    inc = mapa_inc.get(str(info['Pozos']).replace('-', '').replace(' ', ''), "Sin incidencia")
+    n_tq, n_arr, n_par = float(mapa_aux.get(str(info.get('nivel_tanque', '')), 0) or 0), float(mapa_aux.get(str(info.get('nivel_arranque_tq', '')), 0) or 0), float(mapa_aux.get(str(info.get('nivel_paro_tq', '')), 0) or 0)
+    h_p_val, h_a_val = convertir_a_hora(mapa_aux.get(str(info.get('H_paro', '')))), convertir_a_hora(mapa_aux.get(str(info.get('H_arranque', ''))))
     
-    tags_aux = list(set([str(t) for col in tags_aux_cols for t in df_dic[col].dropna().unique() if str(t).strip() != '']))
+    tag_l1 = str(info.get('amperaje_L1', ''))
+    tag_l2 = str(info.get('amperaje_L2', ''))
+    tag_l3 = str(info.get('amperaje_L3', ''))
     
-    df_h = pd.DataFrame()
-    if tags_aux:
-        lotes_aux = [tags_aux[i:i + 100] for i in range(0, len(tags_aux), 100)]
-        lista_df_h = []
-        for lote in lotes_aux:
-            tags_str_lote = "', '".join(lote)
-            df_lote = obtener_datos(f"SELECT r.NAME, h.VALUE FROM VfiTagNumHistory_Ultimo h JOIN VfiTagRef r ON h.GATEID = r.GATEID WHERE r.NAME IN ('{tags_str_lote}') AND h.FECHA = (SELECT MAX(FECHA) FROM VfiTagNumHistory_Ultimo WHERE GATEID = h.GATEID)", "scada")
-            if not df_lote.empty:
-                lista_df_h.append(df_lote)
-        if lista_df_h:
-            df_h = pd.concat(lista_df_h, ignore_index=True)
-
-    mapa_aux = dict(zip(df_h['NAME'].astype(str), df_h['VALUE'])) if not df_h.empty else {}
-
-    # Consulta por lotes de promedios históricos de la última semana de VfiTagNumHistory para las corrientes de cada pozo
-    lista_corrientes_desbalance = []
-    lista_corrientes_encendidos = []
-    fecha_hace_7_dias = datetime.now(zona_mx) - timedelta(days=7)
+    a1_val = float(mapa_semanal_prom.get(tag_l1, 0) or 0) if tag_l1 else 0.0
+    a2_val = float(mapa_semanal_prom.get(tag_l2, 0) or 0) if tag_l2 else 0.0
+    a3_val = float(mapa_semanal_prom.get(tag_l3, 0) or 0) if tag_l3 else 0.0
     
-    tags_corr_list = []
-    for _, d_row in df_dic.iterrows():
-        for c_col in ['amperaje_L1', 'amperaje_L2', 'amperaje_L3']:
-            if c_col in d_row and pd.notnull(d_row[c_col]) and str(d_row[c_col]).strip() != '':
-                tags_corr_list.append(str(d_row[c_col]))
-    
-    mapa_semanal_prom = {}
-    tags_corr_unicos = list(set(tags_corr_list))
-    if tags_corr_unicos:
-        lotes_corr = [tags_corr_unicos[i:i + 100] for i in range(0, len(tags_corr_unicos), 100)]
-        lista_df_hist = []
-        for lote in lotes_corr:
-            tags_str_sql = "', '".join(lote)
-            query_semanal = f"""
-                SELECT r.NAME, AVG(h.VALUE) as PROMEDIO_VAL
-                FROM VfiTagNumHistory h 
-                JOIN VfiTagRef r ON h.GATEID = r.GATEID 
-                WHERE r.NAME IN ('{tags_str_sql}') 
-                  AND h.FECHA >= '{fecha_hace_7_dias.strftime('%Y-%m-%d %H:%M:%S')}'
-                GROUP BY r.NAME
-            """
-            df_hist_lote = obtener_datos(query_semanal, "scada")
-            if not df_hist_lote.empty:
-                lista_df_hist.append(df_hist_lote)
+    if a1_val > 0 or a2_val > 0 or a3_val > 0:
+        prom_fases = (a1_val + a2_val + a3_val) / 3.0 if (a1_val + a2_val + a3_val) > 0 else 1.0
+        desb_l1 = abs(a1_val - prom_fases) / prom_fases * 100 if prom_fases > 0 else 0.0
+        desb_l2 = abs(a2_val - prom_fases) / prom_fases * 100 if prom_fases > 0 else 0.0
+        desb_l3 = abs(a3_val - prom_fases) / prom_fases * 100 if prom_fases > 0 else 0.0
+        max_desb = max(desb_l1, desb_l2, desb_l3)
         
-        if lista_df_hist:
-            df_hist_semanal = pd.concat(lista_df_hist, ignore_index=True)
-            mapa_semanal_prom = dict(zip(df_hist_semanal['NAME'].astype(str), df_hist_semanal['PROMEDIO_VAL']))
+        if row['VALUE'] != 0:
+            lista_corrientes_encendidos.append({
+                "Pozo": info['Pozos'],
+                "A1 (Avg)": f"{a1_val:.2f} A",
+                "A2 (Avg)": f"{a2_val:.2f} A",
+                "A3 (Avg)": f"{a3_val:.2f} A",
+                "Desb. Max (%)": f"{max_desb:.2f}%",
+                "Fecha": row['FECHA'].date(),
+                "Hora": row['FECHA'].time()
+            })
 
-    lista_apg, lista_enc = [], []
-    ahora_actual = datetime.now(zona_mx)
+        if max_desb >= 11.0:
+            lista_corrientes_desbalance.append({
+                "Pozo": info['Pozos'],
+                "A1 (Avg)": f"{a1_val:.2f} A",
+                "A2 (Avg)": f"{a2_val:.2f} A",
+                "A3 (Avg)": f"{a3_val:.2f} A",
+                "Desb. A1 (%)": f"{max_desb:.2f}%"
+            })
 
-    for _, row in df.iterrows():
-        df_match = df_dic[df_dic['bomba'] == row['NAME']]
-        if df_match.empty: continue
-        info = df_match.iloc[0]
-        inc = mapa_inc.get(str(info['Pozos']).replace('-', '').replace(' ', ''), "Sin incidencia")
-        n_tq, n_arr, n_par = float(mapa_aux.get(str(info.get('nivel_tanque', '')), 0) or 0), float(mapa_aux.get(str(info.get('nivel_arranque_tq', '')), 0) or 0), float(mapa_aux.get(str(info.get('nivel_paro_tq', '')), 0) or 0)
-        h_p_val, h_a_val = convertir_a_hora(mapa_aux.get(str(info.get('H_paro', '')))), convertir_a_hora(mapa_aux.get(str(info.get('H_arranque', ''))))
-        
-        tag_l1 = str(info.get('amperaje_L1', ''))
-        tag_l2 = str(info.get('amperaje_L2', ''))
-        tag_l3 = str(info.get('amperaje_L3', ''))
-        
-        a1_val = float(mapa_semanal_prom.get(tag_l1, 0) or 0) if tag_l1 else 0.0
-        a2_val = float(mapa_semanal_prom.get(tag_l2, 0) or 0) if tag_l2 else 0.0
-        a3_val = float(mapa_semanal_prom.get(tag_l3, 0) or 0) if tag_l3 else 0.0
-        
-        if a1_val > 0 or a2_val > 0 or a3_val > 0:
-            prom_fases = (a1_val + a2_val + a3_val) / 3.0 if (a1_val + a2_val + a3_val) > 0 else 1.0
-            desb_l1 = abs(a1_val - prom_fases) / prom_fases * 100 if prom_fases > 0 else 0.0
-            desb_l2 = abs(a2_val - prom_fases) / prom_fases * 100 if prom_fases > 0 else 0.0
-            desb_l3 = abs(a3_val - prom_fases) / prom_fases * 100 if prom_fases > 0 else 0.0
-            max_desb = max(desb_l1, desb_l2, desb_l3)
-            
-            # Si el pozo está encendido, lo agregamos a la tabla inferior de corrientes de encendidos
-            if row['VALUE'] != 0:
-                lista_corrientes_encendidos.append({
-                    "Pozo": info['Pozos'],
-                    "A1 (Avg)": f"{a1_val:.2f} A",
-                    "A2 (Avg)": f"{a2_val:.2f} A",
-                    "A3 (Avg)": f"{a3_val:.2f} A",
-                    "Desb. Max (%)": f"{max_desb:.2f}%",
-                    "Fecha": row['FECHA'].date(),
-                    "Hora": row['FECHA'].time()
-                })
-
-            if max_desb >= 11.0:
-                lista_corrientes_desbalance.append({
-                    "Pozo": info['Pozos'],
-                    "A1 (Avg)": f"{a1_val:.2f} A",
-                    "A2 (Avg)": f"{a2_val:.2f} A",
-                    "A3 (Avg)": f"{a3_val:.2f} A",
-                    "Desb. A1 (%)": f"{max_desb:.2f}%"
-                })
-
-        fecha_bd = row['FECHA']
-        if pd.notnull(fecha_bd):
-            if fecha_bd.tzinfo is None:
-                fecha_bd = fecha_bd.tz_localize(None).replace(tzinfo=zona_mx)
-            else:
-                fecha_bd = fecha_bd.astimezone(zona_mx)
-        
-        if row['VALUE'] == 0:
-            umbral_alerta = n_arr * 0.50
-            if inc != "Sin incidencia": 
-                estatus, razon = "⚠️ Parado por incidencia", inc
-            elif es_periodo_de_paro_programado(h_p_val, h_a_val) or (n_tq >= n_par and n_par > 0) or (n_tq >= umbral_alerta and n_tq < n_par): 
-                estatus, razon = "✅ Normal", "Operación normal"
-            elif n_tq < umbral_alerta and n_arr > 0: 
-                estatus, razon = "❌ No arranca con su condición de tanque", "No arranca con su condicion de nivel bajo de tanque"
-            else: 
-                estatus, razon = "❌ Estatus desconocido", "Estatus desconocido"
-            
-            if (st.session_state.alertas_activas and fecha_bd.date() == ahora_actual.date() and (ahora_actual - fecha_bd) >= timedelta(hours=3) and inc == "Sin incidencia" and razon != "Operación normal" and info['Pozos'] not in st.session_state.alertas_enviadas):
-                enviar_alerta(info['Pozos'], f"{n_tq:.2f}", f"{n_arr:.2f}", row['FECHA'].time(), h_p_val, h_a_val, razon, row['FECHA'].time().strftime('%H:%M:%S'))
-                st.session_state.alertas_enviadas[info['Pozos']] = ahora_actual
-            
-            lista_apg.append({"Pozo": info['Pozos'], "Estatus_Paro": estatus, "Fecha": row['FECHA'].date(), "Hora": row['FECHA'].time(), "H_Paro": h_p_val, "H_Arranque": h_a_val, "Incidencia": inc, "Nivel_Tanque": f"{n_tq:.2f}" if n_tq > 0 else "Directo a red", "Nivel_Arranque": f"{n_arr:.2f}" if n_arr > 0 else "", "Nivel_Paro": f"{n_par:.2f}" if n_par > 0 else "", "V_L1": f"{float(mapa_aux.get(str(info.get('voltaje_L1','')), 0)):.2f}", "V_L2": f"{float(mapa_aux.get(str(info.get('voltaje_L2','')), 0)):.2f}", "V_L3": f"{float(mapa_aux.get(str(info.get('voltaje_L3','')), 0)):.2f}", "TS": row['FECHA']})
+    fecha_bd = row['FECHA']
+    if pd.notnull(fecha_bd):
+        if fecha_bd.tzinfo is None:
+            fecha_bd = fecha_bd.tz_localize(None).replace(tzinfo=zona_mx)
         else:
-            if info['Pozos'] in st.session_state.alertas_enviadas: del st.session_state.alertas_enviadas[info['Pozos']]
-            lista_enc.append({"Pozo": info['Pozos'], "Fecha": row['FECHA'].date(), "Hora": row['FECHA'].time(), "TS": row['FECHA']})
-
-    df_final = pd.DataFrame(lista_apg).sort_values(by='TS', ascending=False) if lista_apg else pd.DataFrame()
-    df_enc_full = pd.DataFrame(lista_enc).sort_values(by='TS', ascending=False) if lista_enc else pd.DataFrame()
-    df_enc_amps = pd.DataFrame(lista_corrientes_encendidos).sort_values(by='Pozo') if lista_corrientes_encendidos else pd.DataFrame()
-    df_desb_corr = pd.DataFrame(lista_corrientes_desbalance) if lista_corrientes_desbalance else pd.DataFrame()
+            fecha_bd = fecha_bd.astimezone(zona_mx)
     
-    with placeholder_apg:
-        if not df_final.empty:
-            def color_fila(row):
-                e = str(row['Estatus_Paro'])
-                c = '#FF0000' if '❌' in e else '#FFD700' if '⚠️' in e else '#00FF00' if '✅' in e else 'inherit'
-                return [f'color: {c}'] * len(row)
-            st.dataframe(df_final.drop(columns=['TS']).style.apply(color_fila, axis=1).set_properties(**{'text-align': 'center'}), use_container_width=True, hide_index=True)
-    
-    # 1. PRIMERA TABLA DE POZOS ENCENDIDOS (COMO ESTABA ORIGINALMENTE: SÓLO POZO, FECHA Y HORA) DEJADA ARRIBA
-    with placeholder_enc:
-        df_mostrar = df_enc_full
-        if st.session_state.busqueda_pozo:
-            df_mostrar = df_enc_full[df_enc_full['Pozo'].astype(str).str.contains(st.session_state.busqueda_pozo, case=False, na=False)]
-        if not df_mostrar.empty: 
-            st.dataframe(df_mostrar.drop(columns=['TS']), use_container_width=True, hide_index=True)
+    if row['VALUE'] == 0:
+        umbral_alerta = n_arr * 0.50
+        if inc != "Sin incidencia": 
+            estatus, razon = "⚠️ Parado por incidencia", inc
+        elif es_periodo_de_paro_programado(h_p_val, h_a_val) or (n_tq >= n_par and n_par > 0) or (n_tq >= umbral_alerta and n_tq < n_par): 
+            estatus, razon = "✅ Normal", "Operación normal"
+        elif n_tq < umbral_alerta and n_arr > 0: 
+            estatus, razon = "❌ No arranca con su condición de tanque", "No arranca con su condicion de nivel bajo de tanque"
+        else: 
+            estatus, razon = "❌ Estatus desconocido", "Estatus desconocido"
+        
+        if (st.session_state.alertas_activas and fecha_bd.date() == ahora_actual.date() and (ahora_actual - fecha_bd) >= timedelta(hours=3) and inc == "Sin incidencia" and razon != "Operación normal" and info['Pozos'] not in st.session_state.alertas_enviadas):
+            enviar_alerta(info['Pozos'], f"{n_tq:.2f}", f"{n_arr:.2f}", row['FECHA'].time(), h_p_val, h_a_val, razon, row['FECHA'].time().strftime('%H:%M:%S'))
+            st.session_state.alertas_enviadas[info['Pozos']] = ahora_actual
+        
+        lista_apg.append({"Pozo": info['Pozos'], "Estatus_Paro": estatus, "Fecha": row['FECHA'].date(), "Hora": row['FECHA'].time(), "H_Paro": h_p_val, "H_Arranque": h_a_val, "Incidencia": inc, "Nivel_Tanque": f"{n_tq:.2f}" if n_tq > 0 else "Directo a red", "Nivel_Arranque": f"{n_arr:.2f}" if n_arr > 0 else "", "Nivel_Paro": f"{n_par:.2f}" if n_par > 0 else "", "V_L1": f"{float(mapa_aux.get(str(info.get('voltaje_L1','')), 0)):.2f}", "V_L2": f"{float(mapa_aux.get(str(info.get('voltaje_L2','')), 0)):.2f}", "V_L3": f"{float(mapa_aux.get(str(info.get('voltaje_L3','')), 0)):.2f}", "TS": row['FECHA']})
+    else:
+        if info['Pozos'] in st.session_state.alertas_enviadas: del st.session_state.alertas_enviadas[info['Pozos']]
+        lista_enc.append({"Pozo": info['Pozos'], "Fecha": row['FECHA'].date(), "Hora": row['FECHA'].time(), "TS": row['FECHA']})
 
-    with placeholder_corrientes:
-        st.subheader("⚡ Análisis de Desbalance de Corrientes (Promedio Última Semana - Umbral > 11%)")
-        if not df_desb_corr.empty:
-            st.dataframe(df_desb_corr, use_container_width=True, hide_index=True)
-        else:
-            st.success("No hay pozos con desbalance de corriente superior al 11% en el promedio semanal.")
+df_final = pd.DataFrame(lista_apg).sort_values(by='TS', ascending=False) if lista_apg else pd.DataFrame()
+df_enc_full = pd.DataFrame(lista_enc).sort_values(by='TS', ascending=False) if lista_enc else pd.DataFrame()
+df_enc_amps = pd.DataFrame(lista_corrientes_encendidos).sort_values(by='Pozo') if lista_corrientes_encendidos else pd.DataFrame()
+df_desb_corr = pd.DataFrame(lista_corrientes_desbalance) if lista_corrientes_desbalance else pd.DataFrame()
 
-    # 2. SEGUNDA TABLA (LA NUEVA DE POZOS ENCENDIDOS CON AMPERAJES) COLOCADA EN LA PARTE DE ABAJO
-    with placeholder_enc_amps:
-        st.subheader("📊 Pozos Encendidos y sus Amperajes (Promedio Semanal)")
-        df_mostrar_amps = df_enc_amps
-        if st.session_state.busqueda_pozo and not df_enc_amps.empty:
-            df_mostrar_amps = df_enc_amps[df_enc_amps['Pozo'].astype(str).str.contains(st.session_state.busqueda_pozo, case=False, na=False)]
-        if not df_mostrar_amps.empty:
-            st.dataframe(df_mostrar_amps, use_container_width=True, hide_index=True)
-        else:
-            st.info("No hay datos de corriente disponibles para los pozos encendidos.")
-            
-    with placeholder_logs:
-        st.subheader("📋 Registro de Alertas")
-        st.markdown(f'<div class="log-console">{"<br>".join(reversed(st.session_state.logs))}</div>', unsafe_allow_html=True)
+with placeholder_apg:
+    if not df_final.empty:
+        def color_fila(row):
+            e = str(row['Estatus_Paro'])
+            c = '#FF0000' if '❌' in e else '#FFD700' if '⚠️' in e else '#00FF00' if '✅' in e else 'inherit'
+            return [f'color: {c}'] * len(row)
+        st.dataframe(df_final.drop(columns=['TS']).style.apply(color_fila, axis=1).set_properties(**{'text-align': 'center'}), use_container_width=True, hide_index=True)
+    else:
+        st.info("No hay pozos apagados registrados.")
 
-    t.sleep(30)
+with placeholder_enc:
+    df_mostrar = df_enc_full
+    if st.session_state.busqueda_pozo:
+        df_mostrar = df_enc_full[df_enc_full['Pozo'].astype(str).str.contains(st.session_state.busqueda_pozo, case=False, na=False)]
+    if not df_mostrar.empty: 
+        st.dataframe(df_mostrar.drop(columns=['TS']), use_container_width=True, hide_index=True)
+    else:
+        st.info("No hay pozos encendidos registrados.")
+
+with placeholder_corrientes:
+    st.subheader("⚡ Análisis de Desbalance de Corrientes (Promedio Última Semana - Umbral > 11%)")
+    if not df_desb_corr.empty:
+        st.dataframe(df_desb_corr, use_container_width=True, hide_index=True)
+    else:
+        st.success("No hay pozos con desbalance de corriente superior al 11% en el promedio semanal.")
+
+with placeholder_enc_amps:
+    st.subheader("📊 Pozos Encendidos y sus Amperajes (Promedio Semanal)")
+    df_mostrar_amps = df_enc_amps
+    if st.session_state.busqueda_pozo and not df_enc_amps.empty:
+        df_mostrar_amps = df_enc_amps[df_enc_amps['Pozo'].astype(str).str.contains(st.session_state.busqueda_pozo, case=False, na=False)]
+    if not df_mostrar_amps.empty:
+        st.dataframe(df_mostrar_amps, use_container_width=True, hide_index=True)
+    else:
+        st.info("No hay datos de corriente disponibles para los pozos encendidos.")
+        
+with placeholder_logs:
+    st.subheader("📋 Registro de Alertas")
+    st.markdown(f'<div class="log-console">{"<br>".join(reversed(st.session_state.logs))}</div>', unsafe_allow_html=True)
