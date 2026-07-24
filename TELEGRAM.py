@@ -148,19 +148,14 @@ except:
 
 st.divider()
 
-# --- FRAGMENTO DE MONITOREO Y TABLAS DE POZOS (PRIMERO, COMO LO QUERÍAS) ---
+# --- FRAGMENTO DE MONITOREO Y TABLAS DE POZOS (ACTUALIZACIÓN LIMPIA SIN PARPAEO) ---
 @st.fragment(run_every=30)
 def monitor_pozos_fragment():
     col_izq, col_der = st.columns([0.80, 0.20])
     with col_izq:
         st.subheader("🔴 Pozos Apagados")
-        placeholder_apg = st.empty()
     with col_der:
         st.subheader("🟢 Pozos Encendidos")
-        placeholder_enc = st.empty()
-
-    placeholder_logs = st.empty()
-    placeholder_enc_amps = st.empty()
 
     try:
         df_inc = obtener_datos("SELECT NUM_POZO, DIAGNOSTICO_FALLA FROM vw_incidencias_en_pozos WHERE ESTATUS != 'Cerrada'", "scada")
@@ -288,7 +283,8 @@ def monitor_pozos_fragment():
     df_enc_full = pd.DataFrame(lista_enc).sort_values(by='TS', ascending=False) if lista_enc else pd.DataFrame()
     df_enc_amps = pd.DataFrame(lista_corrientes_encendidos).sort_values(by='Pozo') if lista_corrientes_encendidos else pd.DataFrame()
 
-    with placeholder_apg:
+    # RENDERIZADO DIRECTO (Sin placeholders vacíos que causen parpadeos)
+    with col_izq:
         if not df_final.empty:
             def color_fila(row):
                 e = str(row['Estatus_Paro'])
@@ -298,7 +294,7 @@ def monitor_pozos_fragment():
         else:
             st.info("No hay pozos apagados registrados.")
 
-    with placeholder_enc:
+    with col_der:
         df_mostrar = df_enc_full
         if st.session_state.busqueda_pozo:
             df_mostrar = df_enc_full[df_enc_full['Pozo'].astype(str).str.contains(st.session_state.busqueda_pozo, case=False, na=False)]
@@ -307,21 +303,19 @@ def monitor_pozos_fragment():
         else:
             st.info("No hay pozos encendidos registrados.")
 
-    with placeholder_enc_amps:
-        st.subheader("📊 Pozos Encendidos y sus Amperajes (Último Valor Registrado)")
-        df_mostrar_amps = df_enc_amps
-        if st.session_state.busqueda_pozo and not df_enc_amps.empty:
-            df_mostrar_amps = df_enc_amps[df_enc_amps['Pozo'].astype(str).str.contains(st.session_state.busqueda_pozo, case=False, na=False)]
-        if not df_mostrar_amps.empty:
-            st.dataframe(df_mostrar_amps, use_container_width=True, hide_index=True)
-        else:
-            st.info("No hay datos de corriente disponibles para los pozos encendidos.")
-            
-    with placeholder_logs:
-        st.subheader("📋 Registro de Alertas")
-        st.markdown(f'<div class="log-console">{"<br>".join(reversed(st.session_state.logs))}</div>', unsafe_allow_html=True)
+    st.subheader("📊 Pozos Encendidos y sus Amperajes (Último Valor Registrado)")
+    df_mostrar_amps = df_enc_amps
+    if st.session_state.busqueda_pozo and not df_enc_amps.empty:
+        df_mostrar_amps = df_enc_amps[df_enc_amps['Pozo'].astype(str).str.contains(st.session_state.busqueda_pozo, case=False, na=False)]
+    if not df_mostrar_amps.empty:
+        st.dataframe(df_mostrar_amps, use_container_width=True, hide_index=True)
+    else:
+        st.info("No hay datos de corriente disponibles para los pozos encendidos.")
+        
+    st.subheader("📋 Registro de Alertas")
+    st.markdown(f'<div class="log-console">{"<br>".join(reversed(st.session_state.logs))}</div>', unsafe_allow_html=True)
 
-# Ejecución del fragmento de tablas primero
+# Ejecución del fragmento limpio
 monitor_pozos_fragment()
 
 st.divider()
