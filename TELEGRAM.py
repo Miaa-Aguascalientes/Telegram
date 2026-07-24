@@ -138,19 +138,6 @@ with c1:
 with c3:
     st.text_input("🔍 Buscar pozo (solo encendidos)...", key='busqueda_pozo')
 
-# --- ESTRUCTURA ---
-col_izq, col_der = st.columns([0.80, 0.20])
-with col_izq:
-    st.subheader("🔴 Pozos Apagados")
-    placeholder_apg = st.empty()
-with col_der:
-    st.subheader("🟢 Pozos Encendidos")
-    placeholder_enc = st.empty()
-
-placeholder_logs = st.empty()
-placeholder_dest = st.empty()
-placeholder_enc_amps = st.empty()
-
 # --- CARGA DE DATOS GENERALES ---
 df_dic = obtener_datos("SELECT * FROM Diccionario_de_pozos WHERE bomba != 'Sin telemetria'", "dic")
 
@@ -159,257 +146,267 @@ try:
 except:
     df_destinatarios = pd.DataFrame()
 
-# --- RENDERIZADO FUERA DEL BUCLE ---
-with placeholder_dest.container():
-    st.subheader("👥 Gestión de Destinatarios de Alertas (Telegram)")
-    
-    with st.expander("➕ Añadir nuevo destinatario"):
-        with st.form("form_nuevo_usuario_dinamico_unico"):
-            f_col1, f_col2, f_col3 = st.columns(3)
-            with f_col1:
-                nuevo_nombre = st.text_input("Nombre completo", key="input_nuevo_nombre")
-            with f_col2:
-                nuevo_chart = st.text_input("Chart ID (Telegram)", key="input_nuevo_chart")
-            with f_col3:
-                nuevo_depto = st.text_input("Departamento", value="Planeacion Tecnica", key="input_nuevo_depto")
-            
-            btn_crear = st.form_submit_button("Guardar Usuario")
-            if btn_crear:
-                if nuevo_nombre and nuevo_chart:
-                    try:
-                        df_max_id = obtener_datos("SELECT MAX(CAST(id AS UNSIGNED)) as max_id FROM Diccionario_telegram", "dic")
-                        siguiente_id = 1
-                        if not df_max_id.empty and pd.notnull(df_max_id.iloc[0]['max_id']):
-                            siguiente_id = int(df_max_id.iloc[0]['max_id']) + 1
-                        
-                        nuevo_id_str = f"{siguiente_id:03d}"
+# --- GESTIÓN DE DESTINATARIOS (Estatica, fuera del bucle de actualización) ---
+st.subheader("👥 Gestión de Destinatarios de Alertas (Telegram)")
 
-                        ejecutar_sql(
-                            "INSERT INTO Diccionario_telegram (id, nombre, chart_id, activo, departamento) VALUES (:id, :nombre, :chart_id, 'Si', :depto)",
-                            {"id": nuevo_id_str, "nombre": nuevo_nombre, "chart_id": nuevo_chart, "depto": nuevo_depto}
-                        )
-                        st.success(f"Usuario {nuevo_nombre} añadido correctamente con ID {nuevo_id_str}.")
-                        st.rerun()
-                    except Exception as ex:
-                        st.error(f"Error al insertar el usuario: {ex}")
-                else:
-                    st.warning("Por favor completa los campos obligatorios (Nombre y Chart ID).")
+with st.expander("➕ Añadir nuevo destinatario"):
+    with st.form("form_nuevo_usuario_dinamico_unico"):
+        f_col1, f_col2, f_col3 = st.columns(3)
+        with f_col1:
+            nuevo_nombre = st.text_input("Nombre completo", key="input_nuevo_nombre")
+        with f_col2:
+            nuevo_chart = st.text_input("Chart ID (Telegram)", key="input_nuevo_chart")
+        with f_col3:
+            nuevo_depto = st.text_input("Departamento", value="Planeacion Tecnica", key="input_nuevo_depto")
+        
+        btn_crear = st.form_submit_button("Guardar Usuario")
+        if btn_crear:
+            if nuevo_nombre and nuevo_chart:
+                try:
+                    df_max_id = obtener_datos("SELECT MAX(CAST(id AS UNSIGNED)) as max_id FROM Diccionario_telegram", "dic")
+                    siguiente_id = 1
+                    if not df_max_id.empty and pd.notnull(df_max_id.iloc[0]['max_id']):
+                        siguiente_id = int(df_max_id.iloc[0]['max_id']) + 1
+                    
+                    nuevo_id_str = f"{siguiente_id:03d}"
 
-    if not df_destinatarios.empty:
-        for idx, row_user in df_destinatarios.iterrows():
-            cols_u = st.columns([2, 2, 2, 1, 1])
-            with cols_u[0]:
-                st.text(f"👤 {row_user['nombre']}")
-            with cols_u[1]:
-                st.text(f"💬 ID: {row_user['chart_id']}")
-            with cols_u[2]:
-                st.text(f"🏢 {row_user['departamento']}")
-            with cols_u[3]:
-                actual_val = True if str(row_user['activo']).strip().lower() == 'si' else False
-                nuevo_estado = st.toggle("Activo", value=actual_val, key=f"toggle_user_{row_user['id']}_{idx}")
-                nuevo_str = "Si" if nuevo_estado else "No"
-                if nuevo_str != str(row_user['activo']):
-                    try:
-                        ejecutar_sql("UPDATE Diccionario_telegram SET activo = :val WHERE id = :uid", {"val": nuevo_str, "uid": row_user['id']})
-                        st.toast(f"Actualizado: {row_user['nombre']} -> {nuevo_str}")
-                        st.rerun()
-                    except Exception as ex:
-                        st.error(f"Error al actualizar: {ex}")
-            with cols_u[4]:
-                if st.button("🗑️ Eliminar", key=f"del_user_{row_user['id']}_{idx}"):
-                    st.session_state.user_to_delete = row_user['id']
+                    ejecutar_sql(
+                        "INSERT INTO Diccionario_telegram (id, nombre, chart_id, activo, departamento) VALUES (:id, :nombre, :chart_id, 'Si', :depto)",
+                        {"id": nuevo_id_str, "nombre": nuevo_nombre, "chart_id": nuevo_chart, "depto": nuevo_depto}
+                    )
+                    st.success(f"Usuario {nuevo_nombre} añadido correctamente con ID {nuevo_id_str}.")
                     st.rerun()
-    else:
-        st.info("No se encontraron registros en Diccionario_telegram.")
+                except Exception as ex:
+                    st.error(f"Error al insertar el usuario: {ex}")
+            else:
+                st.warning("Por favor completa los campos obligatorios (Nombre y Chart ID).")
 
-    if st.session_state.user_to_delete is not None:
-        uid_Target = st.session_state.user_to_delete
-        st.warning(f"⚠️ Estás a punto de eliminar al usuario con ID: {uid_Target}. Esta acción no se puede deshacer.")
-        
-        confirm_text = st.text_input("Para confirmar, escribe la palabra requerida en el siguiente campo:", key="input_confirm_delete")
-        
-        c_btn1, c_btn2 = st.columns(2)
-        with c_btn1:
-            if st.button("Sí, confirmar eliminación", type="primary", key="btn_ejecutar_eliminar_def"):
-                if confirm_text.strip().lower() == "delete":
-                    try:
-                        ejecutar_sql("DELETE FROM Diccionario_telegram WHERE id = :uid", {"uid": uid_Target})
-                        st.success("Registro eliminado correctamente.")
-                        st.session_state.user_to_delete = None
-                        t.sleep(0.5)
-                        st.rerun()
-                    except Exception as ex:
-                        st.error(f"Error al eliminar de la base de datos: {ex}")
-                else:
-                    st.error("La palabra ingresada no coincide. Inténtalo de nuevo.")
-        with c_btn2:
-            if st.button("Cancelar", key="btn_cancelar_eliminar_def"):
-                st.session_state.user_to_delete = None
+if not df_destinatarios.empty:
+    for idx, row_user in df_destinatarios.iterrows():
+        cols_u = st.columns([2, 2, 2, 1, 1])
+        with cols_u[0]:
+            st.text(f"👤 {row_user['nombre']}")
+        with cols_u[1]:
+            st.text(f"💬 ID: {row_user['chart_id']}")
+        with cols_u[2]:
+            st.text(f"🏢 {row_user['departamento']}")
+        with cols_u[3]:
+            actual_val = True if str(row_user['activo']).strip().lower() == 'si' else False
+            nuevo_estado = st.toggle("Activo", value=actual_val, key=f"toggle_user_{row_user['id']}_{idx}")
+            nuevo_str = "Si" if nuevo_estado else "No"
+            if nuevo_str != str(row_user['activo']):
+                try:
+                    ejecutar_sql("UPDATE Diccionario_telegram SET activo = :val WHERE id = :uid", {"val": nuevo_str, "uid": row_user['id']})
+                    st.toast(f"Actualizado: {row_user['nombre']} -> {nuevo_str}")
+                    st.rerun()
+                except Exception as ex:
+                    st.error(f"Error al actualizar: {ex}")
+        with cols_u[4]:
+            if st.button("🗑️ Eliminar", key=f"del_user_{row_user['id']}_{idx}"):
+                st.session_state.user_to_delete = row_user['id']
                 st.rerun()
+else:
+    st.info("No se encontraron registros en Diccionario_telegram.")
 
-# --- CICLO DE DATOS Y MONITOREO CON AUTOREFRESH ---
-try:
-    df_inc = obtener_datos("SELECT NUM_POZO, DIAGNOSTICO_FALLA FROM vw_incidencias_en_pozos WHERE ESTATUS != 'Cerrada'", "scada")
-    df_inc['KEY'] = df_inc['NUM_POZO'].astype(str).str.replace(r'[- ]', '', regex=True)
-    mapa_inc = dict(zip(df_inc['KEY'], df_inc['DIAGNOSTICO_FALLA']))
-except: mapa_inc = {}
-
-tags = "', '".join(df_dic['bomba'].tolist())
-df = obtener_datos(f"SELECT r.NAME, h.VALUE, h.FECHA FROM VfiTagNumHistory_Ultimo h JOIN VfiTagRef r ON h.GATEID = r.GATEID WHERE r.NAME IN ('{tags}') AND h.FECHA = (SELECT MAX(FECHA) FROM VfiTagNumHistory_Ultimo WHERE GATEID = h.GATEID)", "scada")
-
-# Recolectar tags auxiliares
-cols_corrientes = ['amperaje_L1', 'amperaje_L2', 'amperaje_L3']
-tags_aux_cols = ['H_arranque', 'H_paro', 'nivel_tanque', 'nivel_arranque_tq', 'nivel_paro_tq', 'voltaje_L1', 'voltaje_L2', 'voltaje_L3'] + [c for c in cols_corrientes if c in df_dic.columns]
-
-tags_aux = list(set([str(t) for col in tags_aux_cols for t in df_dic[col].dropna().unique() if str(t).strip() != '']))
-
-df_h = pd.DataFrame()
-if tags_aux:
-    lotes_aux = [tags_aux[i:i + 100] for i in range(0, len(tags_aux), 100)]
-    lista_df_h = []
-    for lote in lotes_aux:
-        tags_str_lote = "', '".join(lote)
-        df_lote = obtener_datos(f"SELECT r.NAME, h.VALUE FROM VfiTagNumHistory_Ultimo h JOIN VfiTagRef r ON h.GATEID = r.GATEID WHERE r.NAME IN ('{tags_str_lote}') AND h.FECHA = (SELECT MAX(FECHA) FROM VfiTagNumHistory_Ultimo WHERE GATEID = h.GATEID)", "scada")
-        if not df_lote.empty:
-            lista_df_h.append(df_lote)
-    if lista_df_h:
-        df_h = pd.concat(lista_df_h, ignore_index=True)
-
-mapa_aux = dict(zip(df_h['NAME'].astype(str), df_h['VALUE'])) if not df_h.empty else {}
-
-# Consulta de corrientes usando el ÚLTIMO valor registrado en VfiTagNumHistory_Ultimo
-lista_corrientes_encendidos = []
-
-tags_corr_list = []
-for _, d_row in df_dic.iterrows():
-    for c_col in ['amperaje_L1', 'amperaje_L2', 'amperaje_L3']:
-        if c_col in d_row and pd.notnull(d_row[c_col]) and str(d_row[c_col]).strip() != '':
-            tags_corr_list.append(str(d_row[c_col]))
-
-mapa_actual_prom = {}
-tags_corr_unicos = list(set(tags_corr_list))
-if tags_corr_unicos:
-    lotes_corr = [tags_corr_unicos[i:i + 100] for i in range(0, len(tags_corr_unicos), 100)]
-    lista_df_act = []
+if st.session_state.user_to_delete is not None:
+    uid_Target = st.session_state.user_to_delete
+    st.warning(f"⚠️ Estás a punto de eliminar al usuario con ID: {uid_Target}. Esta acción no se puede deshacer.")
     
-    for lote in lotes_corr:
-        tags_str_sql = "', '".join(lote)
-        query_actual = f"""
-            SELECT r.NAME, h.VALUE as VALOR_ACTUAL 
-            FROM VfiTagNumHistory_Ultimo h 
-            JOIN VfiTagRef r ON h.GATEID = r.GATEID 
-            WHERE r.NAME IN ('{tags_str_sql}') 
-              AND h.FECHA = (SELECT MAX(FECHA) FROM VfiTagNumHistory_Ultimo WHERE GATEID = h.GATEID)
-        """
-        df_act_lote = obtener_datos(query_actual, "scada")
-        if not df_act_lote.empty:
-            lista_df_act.append(df_act_lote)
+    confirm_text = st.text_input("Para confirmar, escribe la palabra requerida en el siguiente campo:", key="input_confirm_delete")
     
-    if lista_df_act:
-        df_act_ultimos = pd.concat(lista_df_act, ignore_index=True)
-        mapa_actual_prom = dict(zip(df_act_ultimos['NAME'].astype(str), df_act_ultimos['VALOR_ACTUAL']))
+    c_btn1, c_btn2 = st.columns(2)
+    with c_btn1:
+        if st.button("Sí, confirmar eliminación", type="primary", key="btn_ejecutar_eliminar_def"):
+            if confirm_text.strip().lower() == "delete":
+                try:
+                    ejecutar_sql("DELETE FROM Diccionario_telegram WHERE id = :uid", {"uid": uid_Target})
+                    st.success("Registro eliminado correctamente.")
+                    st.session_state.user_to_delete = None
+                    t.sleep(0.5)
+                    st.rerun()
+                except Exception as ex:
+                    st.error(f"Error al eliminar de la base de datos: {ex}")
+            else:
+                st.error("La palabra ingresada no coincide. Inténtalo de nuevo.")
+    with c_btn2:
+        if st.button("Cancelar", key="btn_cancelar_eliminar_def"):
+            st.session_state.user_to_delete = None
+            st.rerun()
 
-lista_apg, lista_enc = [], []
-ahora_actual = datetime.now(zona_mx)
+st.divider()
 
-for _, row in df.iterrows():
-    df_match = df_dic[df_dic['bomba'] == row['NAME']]
-    if df_match.empty: continue
-    info = df_match.iloc[0]
-    inc = mapa_inc.get(str(info['Pozos']).replace('-', '').replace(' ', ''), "Sin incidencia")
-    n_tq, n_arr, n_par = float(mapa_aux.get(str(info.get('nivel_tanque', '')), 0) or 0), float(mapa_aux.get(str(info.get('nivel_arranque_tq', '')), 0) or 0), float(mapa_aux.get(str(info.get('nivel_paro_tq', '')), 0) or 0)
-    h_p_val, h_a_val = convertir_a_hora(mapa_aux.get(str(info.get('H_paro', '')))), convertir_a_hora(mapa_aux.get(str(info.get('H_arranque', ''))))
-    
-    tag_l1 = str(info.get('amperaje_L1', ''))
-    tag_l2 = str(info.get('amperaje_L2', ''))
-    tag_l3 = str(info.get('amperaje_L3', ''))
-    
-    a1_val = float(mapa_actual_prom.get(tag_l1, 0) or 0) if tag_l1 else 0.0
-    a2_val = float(mapa_actual_prom.get(tag_l2, 0) or 0) if tag_l2 else 0.0
-    a3_val = float(mapa_actual_prom.get(tag_l3, 0) or 0) if tag_l3 else 0.0
-    
-    if a1_val > 0 or a2_val > 0 or a3_val > 0:
-        prom_fases = (a1_val + a2_val + a3_val) / 3.0 if (a1_val + a2_val + a3_val) > 0 else 1.0
-        desb_l1 = abs(a1_val - prom_fases) / prom_fases * 100 if prom_fases > 0 else 0.0
-        desb_l2 = abs(a2_val - prom_fases) / prom_fases * 100 if prom_fases > 0 else 0.0
-        desb_l3 = abs(a3_val - prom_fases) / prom_fases * 100 if prom_fases > 0 else 0.0
-        max_desb = max(desb_l1, desb_l2, desb_l3)
+# --- FRAGMENTO DE MONITOREO Y TABLAS (Se actualiza automáticamente cada 30 segundos SIN recargar toda la página) ---
+@st.fragment(run_every=30)
+def monitor_pozos_fragment():
+    col_izq, col_der = st.columns([0.80, 0.20])
+    with col_izq:
+        st.subheader("🔴 Pozos Apagados")
+        placeholder_apg = st.empty()
+    with col_der:
+        st.subheader("🟢 Pozos Encendidos")
+        placeholder_enc = st.empty()
+
+    placeholder_logs = st.empty()
+    placeholder_enc_amps = st.empty()
+
+    try:
+        df_inc = obtener_datos("SELECT NUM_POZO, DIAGNOSTICO_FALLA FROM vw_incidencias_en_pozos WHERE ESTATUS != 'Cerrada'", "scada")
+        df_inc['KEY'] = df_inc['NUM_POZO'].astype(str).str.replace(r'[- ]', '', regex=True)
+        mapa_inc = dict(zip(df_inc['KEY'], df_inc['DIAGNOSTICO_FALLA']))
+    except: mapa_inc = {}
+
+    tags = "', '".join(df_dic['bomba'].tolist())
+    df = obtener_datos(f"SELECT r.NAME, h.VALUE, h.FECHA FROM VfiTagNumHistory_Ultimo h JOIN VfiTagRef r ON h.GATEID = r.GATEID WHERE r.NAME IN ('{tags}') AND h.FECHA = (SELECT MAX(FECHA) FROM VfiTagNumHistory_Ultimo WHERE GATEID = h.GATEID)", "scada")
+
+    cols_corrientes = ['amperaje_L1', 'amperaje_L2', 'amperaje_L3']
+    tags_aux_cols = ['H_arranque', 'H_paro', 'nivel_tanque', 'nivel_arranque_tq', 'nivel_paro_tq', 'voltaje_L1', 'voltaje_L2', 'voltaje_L3'] + [c for c in cols_corrientes if c in df_dic.columns]
+
+    tags_aux = list(set([str(t) for col in tags_aux_cols for t in df_dic[col].dropna().unique() if str(t).strip() != '']))
+
+    df_h = pd.DataFrame()
+    if tags_aux:
+        lotes_aux = [tags_aux[i:i + 100] for i in range(0, len(tags_aux), 100)]
+        lista_df_h = []
+        for lote in lotes_aux:
+            tags_str_lote = "', '".join(lote)
+            df_lote = obtener_datos(f"SELECT r.NAME, h.VALUE FROM VfiTagNumHistory_Ultimo h JOIN VfiTagRef r ON h.GATEID = r.GATEID WHERE r.NAME IN ('{tags_str_lote}') AND h.FECHA = (SELECT MAX(FECHA) FROM VfiTagNumHistory_Ultimo WHERE GATEID = h.GATEID)", "scada")
+            if not df_lote.empty:
+                lista_df_h.append(df_lote)
+        if lista_df_h:
+            df_h = pd.concat(lista_df_h, ignore_index=True)
+
+    mapa_aux = dict(zip(df_h['NAME'].astype(str), df_h['VALUE'])) if not df_h.empty else {}
+
+    lista_corrientes_encendidos = []
+    tags_corr_list = []
+    for _, d_row in df_dic.iterrows():
+        for c_col in ['amperaje_L1', 'amperaje_L2', 'amperaje_L3']:
+            if c_col in d_row and pd.notnull(d_row[c_col]) and str(d_row[c_col]).strip() != '':
+                tags_corr_list.append(str(d_row[c_col]))
+
+    mapa_actual_prom = {}
+    tags_corr_unicos = list(set(tags_corr_list))
+    if tags_corr_unicos:
+        lotes_corr = [tags_corr_unicos[i:i + 100] for i in range(0, len(tags_corr_unicos), 100)]
+        lista_df_act = []
         
-        if row['VALUE'] != 0:
-            lista_corrientes_encendidos.append({
-                "Pozo": info['Pozos'],
-                "A1 (Act)": f"{a1_val:.2f} A",
-                "A2 (Act)": f"{a2_val:.2f} A",
-                "A3 (Act)": f"{a3_val:.2f} A",
-                "Desb. Max (%)": f"{max_desb:.2f}%",
-                "Fecha": row['FECHA'].date(),
-                "Hora": row['FECHA'].time()
-            })
+        for lote in lotes_corr:
+            tags_str_sql = "', '".join(lote)
+            query_actual = f"""
+                SELECT r.NAME, h.VALUE as VALOR_ACTUAL 
+                FROM VfiTagNumHistory_Ultimo h 
+                JOIN VfiTagRef r ON h.GATEID = r.GATEID 
+                WHERE r.NAME IN ('{tags_str_sql}') 
+                  AND h.FECHA = (SELECT MAX(FECHA) FROM VfiTagNumHistory_Ultimo WHERE GATEID = h.GATEID)
+            """
+            df_act_lote = obtener_datos(query_actual, "scada")
+            if not df_act_lote.empty:
+                lista_df_act.append(df_act_lote)
+        
+        if lista_df_act:
+            df_act_ultimos = pd.concat(lista_df_act, ignore_index=True)
+            mapa_actual_prom = dict(zip(df_act_ultimos['NAME'].astype(str), df_act_ultimos['VALOR_ACTUAL']))
 
-    fecha_bd = row['FECHA']
-    if pd.notnull(fecha_bd):
-        if fecha_bd.tzinfo is None:
-            fecha_bd = fecha_bd.tz_localize(None).replace(tzinfo=zona_mx)
+    lista_apg, lista_enc = [], []
+    ahora_actual = datetime.now(zona_mx)
+
+    for _, row in df.iterrows():
+        df_match = df_dic[df_dic['bomba'] == row['NAME']]
+        if df_match.empty: continue
+        info = df_match.iloc[0]
+        inc = mapa_inc.get(str(info['Pozos']).replace('-', '').replace(' ', ''), "Sin incidencia")
+        n_tq, n_arr, n_par = float(mapa_aux.get(str(info.get('nivel_tanque', '')), 0) or 0), float(mapa_aux.get(str(info.get('nivel_arranque_tq', '')), 0) or 0), float(mapa_aux.get(str(info.get('nivel_paro_tq', '')), 0) or 0)
+        h_p_val, h_a_val = convertir_a_hora(mapa_aux.get(str(info.get('H_paro', '')))), convertir_a_hora(mapa_aux.get(str(info.get('H_arranque', ''))))
+        
+        tag_l1 = str(info.get('amperaje_L1', ''))
+        tag_l2 = str(info.get('amperaje_L2', ''))
+        tag_l3 = str(info.get('amperaje_L3', ''))
+        
+        a1_val = float(mapa_actual_prom.get(tag_l1, 0) or 0) if tag_l1 else 0.0
+        a2_val = float(mapa_actual_prom.get(tag_l2, 0) or 0) if tag_l2 else 0.0
+        a3_val = float(mapa_actual_prom.get(tag_l3, 0) or 0) if tag_l3 else 0.0
+        
+        if a1_val > 0 or a2_val > 0 or a3_val > 0:
+            prom_fases = (a1_val + a2_val + a3_val) / 3.0 if (a1_val + a2_val + a3_val) > 0 else 1.0
+            desb_l1 = abs(a1_val - prom_fases) / prom_fases * 100 if prom_fases > 0 else 0.0
+            desb_l2 = abs(a2_val - prom_fases) / prom_fases * 100 if prom_fases > 0 else 0.0
+            desb_l3 = abs(a3_val - prom_fases) / prom_fases * 100 if prom_fases > 0 else 0.0
+            max_desb = max(desb_l1, desb_l2, desb_l3)
+            
+            if row['VALUE'] != 0:
+                lista_corrientes_encendidos.append({
+                    "Pozo": info['Pozos'],
+                    "A1 (Act)": f"{a1_val:.2f} A",
+                    "A2 (Act)": f"{a2_val:.2f} A",
+                    "A3 (Act)": f"{a3_val:.2f} A",
+                    "Desb. Max (%)": f"{max_desb:.2f}%",
+                    "Fecha": row['FECHA'].date(),
+                    "Hora": row['FECHA'].time()
+                })
+
+        fecha_bd = row['FECHA']
+        if pd.notnull(fecha_bd):
+            if fecha_bd.tzinfo is None:
+                fecha_bd = fecha_bd.tz_localize(None).replace(tzinfo=zona_mx)
+            else:
+                fecha_bd = fecha_bd.astimezone(zona_mx)
+        
+        if row['VALUE'] == 0:
+            umbral_alerta = n_arr * 0.50
+            if inc != "Sin incidencia": 
+                estatus, razon = "⚠️ Parado por incidencia", inc
+            elif es_periodo_de_paro_programado(h_p_val, h_a_val) or (n_tq >= n_par and n_par > 0) or (n_tq >= umbral_alerta and n_tq < n_par): 
+                estatus, razon = "✅ Normal", "Operación normal"
+            elif n_tq < umbral_alerta and n_arr > 0: 
+                estatus, razon = "❌ No arranca con su condición de tanque", "No arranca con su condicion de nivel bajo de tanque"
+            else: 
+                estatus, razon = "❌ Estatus desconocido", "Estatus desconocido"
+            
+            if (st.session_state.alertas_activas and fecha_bd.date() == ahora_actual.date() and (ahora_actual - fecha_bd) >= timedelta(hours=3) and inc == "Sin incidencia" and razon != "Operación normal" and info['Pozos'] not in st.session_state.alertas_enviadas):
+                enviar_alerta(info['Pozos'], f"{n_tq:.2f}", f"{n_arr:.2f}", row['FECHA'].time(), h_p_val, h_a_val, razon, row['FECHA'].time().strftime('%H:%M:%S'))
+                st.session_state.alertas_enviadas[info['Pozos']] = ahora_actual
+            
+            lista_apg.append({"Pozo": info['Pozos'], "Estatus_Paro": estatus, "Fecha": row['FECHA'].date(), "Hora": row['FECHA'].time(), "H_Paro": h_p_val, "H_Arranque": h_a_val, "Incidencia": inc, "Nivel_Tanque": f"{n_tq:.2f}" if n_tq > 0 else "Directo a red", "Nivel_Arranque": f"{n_arr:.2f}" if n_arr > 0 else "", "Nivel_Paro": f"{n_par:.2f}" if n_par > 0 else "", "V_L1": f"{float(mapa_aux.get(str(info.get('voltaje_L1','')), 0)):.2f}", "V_L2": f"{float(mapa_aux.get(str(info.get('voltaje_L2','')), 0)):.2f}", "V_L3": f"{float(mapa_aux.get(str(info.get('voltaje_L3','')), 0)):.2f}", "TS": row['FECHA']})
         else:
-            fecha_bd = fecha_bd.astimezone(zona_mx)
-    
-    if row['VALUE'] == 0:
-        umbral_alerta = n_arr * 0.50
-        if inc != "Sin incidencia": 
-            estatus, razon = "⚠️ Parado por incidencia", inc
-        elif es_periodo_de_paro_programado(h_p_val, h_a_val) or (n_tq >= n_par and n_par > 0) or (n_tq >= umbral_alerta and n_tq < n_par): 
-            estatus, razon = "✅ Normal", "Operación normal"
-        elif n_tq < umbral_alerta and n_arr > 0: 
-            estatus, razon = "❌ No arranca con su condición de tanque", "No arranca con su condicion de nivel bajo de tanque"
-        else: 
-            estatus, razon = "❌ Estatus desconocido", "Estatus desconocido"
-        
-        if (st.session_state.alertas_activas and fecha_bd.date() == ahora_actual.date() and (ahora_actual - fecha_bd) >= timedelta(hours=3) and inc == "Sin incidencia" and razon != "Operación normal" and info['Pozos'] not in st.session_state.alertas_enviadas):
-            enviar_alerta(info['Pozos'], f"{n_tq:.2f}", f"{n_arr:.2f}", row['FECHA'].time(), h_p_val, h_a_val, razon, row['FECHA'].time().strftime('%H:%M:%S'))
-            st.session_state.alertas_enviadas[info['Pozos']] = ahora_actual
-        
-        lista_apg.append({"Pozo": info['Pozos'], "Estatus_Paro": estatus, "Fecha": row['FECHA'].date(), "Hora": row['FECHA'].time(), "H_Paro": h_p_val, "H_Arranque": h_a_val, "Incidencia": inc, "Nivel_Tanque": f"{n_tq:.2f}" if n_tq > 0 else "Directo a red", "Nivel_Arranque": f"{n_arr:.2f}" if n_arr > 0 else "", "Nivel_Paro": f"{n_par:.2f}" if n_par > 0 else "", "V_L1": f"{float(mapa_aux.get(str(info.get('voltaje_L1','')), 0)):.2f}", "V_L2": f"{float(mapa_aux.get(str(info.get('voltaje_L2','')), 0)):.2f}", "V_L3": f"{float(mapa_aux.get(str(info.get('voltaje_L3','')), 0)):.2f}", "TS": row['FECHA']})
-    else:
-        if info['Pozos'] in st.session_state.alertas_enviadas: del st.session_state.alertas_enviadas[info['Pozos']]
-        lista_enc.append({"Pozo": info['Pozos'], "Fecha": row['FECHA'].date(), "Hora": row['FECHA'].time(), "TS": row['FECHA']})
+            if info['Pozos'] in st.session_state.alertas_enviadas: del st.session_state.alertas_enviadas[info['Pozos']]
+            lista_enc.append({"Pozo": info['Pozos'], "Fecha": row['FECHA'].date(), "Hora": row['FECHA'].time(), "TS": row['FECHA']})
 
-df_final = pd.DataFrame(lista_apg).sort_values(by='TS', ascending=False) if lista_apg else pd.DataFrame()
-df_enc_full = pd.DataFrame(lista_enc).sort_values(by='TS', ascending=False) if lista_enc else pd.DataFrame()
-df_enc_amps = pd.DataFrame(lista_corrientes_encendidos).sort_values(by='Pozo') if lista_corrientes_encendidos else pd.DataFrame()
+    df_final = pd.DataFrame(lista_apg).sort_values(by='TS', ascending=False) if lista_apg else pd.DataFrame()
+    df_enc_full = pd.DataFrame(lista_enc).sort_values(by='TS', ascending=False) if lista_enc else pd.DataFrame()
+    df_enc_amps = pd.DataFrame(lista_corrientes_encendidos).sort_values(by='Pozo') if lista_corrientes_encendidos else pd.DataFrame()
 
-with placeholder_apg:
-    if not df_final.empty:
-        def color_fila(row):
-            e = str(row['Estatus_Paro'])
-            c = '#FF0000' if '❌' in e else '#FFD700' if '⚠️' in e else '#00FF00' if '✅' in e else 'inherit'
-            return [f'color: {c}'] * len(row)
-        st.dataframe(df_final.drop(columns=['TS']).style.apply(color_fila, axis=1).set_properties(**{'text-align': 'center'}), use_container_width=True, hide_index=True)
-    else:
-        st.info("No hay pozos apagados registrados.")
+    with placeholder_apg:
+        if not df_final.empty:
+            def color_fila(row):
+                e = str(row['Estatus_Paro'])
+                c = '#FF0000' if '❌' in e else '#FFD700' if '⚠️' in e else '#00FF00' if '✅' in e else 'inherit'
+                return [f'color: {c}'] * len(row)
+            st.dataframe(df_final.drop(columns=['TS']).style.apply(color_fila, axis=1).set_properties(**{'text-align': 'center'}), use_container_width=True, hide_index=True)
+        else:
+            st.info("No hay pozos apagados registrados.")
 
-with placeholder_enc:
-    df_mostrar = df_enc_full
-    if st.session_state.busqueda_pozo:
-        df_mostrar = df_enc_full[df_enc_full['Pozo'].astype(str).str.contains(st.session_state.busqueda_pozo, case=False, na=False)]
-    if not df_mostrar.empty: 
-        st.dataframe(df_mostrar.drop(columns=['TS']), use_container_width=True, hide_index=True)
-    else:
-        st.info("No hay pozos encendidos registrados.")
+    with placeholder_enc:
+        df_mostrar = df_enc_full
+        if st.session_state.busqueda_pozo:
+            df_mostrar = df_enc_full[df_enc_full['Pozo'].astype(str).str.contains(st.session_state.busqueda_pozo, case=False, na=False)]
+        if not df_mostrar.empty: 
+            st.dataframe(df_mostrar.drop(columns=['TS']), use_container_width=True, hide_index=True)
+        else:
+            st.info("No hay pozos encendidos registrados.")
 
-with placeholder_enc_amps:
-    st.subheader("📊 Pozos Encendidos y sus Amperajes (Último Valor Registrado)")
-    df_mostrar_amps = df_enc_amps
-    if st.session_state.busqueda_pozo and not df_enc_amps.empty:
-        df_mostrar_amps = df_enc_amps[df_enc_amps['Pozo'].astype(str).str.contains(st.session_state.busqueda_pozo, case=False, na=False)]
-    if not df_mostrar_amps.empty:
-        st.dataframe(df_mostrar_amps, use_container_width=True, hide_index=True)
-    else:
-        st.info("No hay datos de corriente disponibles para los pozos encendidos.")
-        
-with placeholder_logs:
-    st.subheader("📋 Registro de Alertas")
-    st.markdown(f'<div class="log-console">{"<br>".join(reversed(st.session_state.logs))}</div>', unsafe_allow_html=True)
+    with placeholder_enc_amps:
+        st.subheader("📊 Pozos Encendidos y sus Amperajes (Último Valor Registrado)")
+        df_mostrar_amps = df_enc_amps
+        if st.session_state.busqueda_pozo and not df_enc_amps.empty:
+            df_mostrar_amps = df_enc_amps[df_enc_amps['Pozo'].astype(str).str.contains(st.session_state.busqueda_pozo, case=False, na=False)]
+        if not df_mostrar_amps.empty:
+            st.dataframe(df_mostrar_amps, use_container_width=True, hide_index=True)
+        else:
+            st.info("No hay datos de corriente disponibles para los pozos encendidos.")
+            
+    with placeholder_logs:
+        st.subheader("📋 Registro de Alertas")
+        st.markdown(f'<div class="log-console">{"<br>".join(reversed(st.session_state.logs))}</div>', unsafe_allow_html=True)
 
-# --- AUTOREFRESH CADA 30 SEGUNDOS ---
-t.sleep(30)
-
+# Llamada al fragmento aislado
+monitor_pozos_fragment()
