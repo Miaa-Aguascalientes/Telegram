@@ -142,7 +142,7 @@ with placeholder_dest.container():
             with f_col2:
                 nuevo_chart = st.text_input("Chart ID (Telegram)", key="input_nuevo_chart")
             with f_col3:
-                nuevo_depto = st.text_input("Departamento", value="Planeacion Tecnica", key="input_nuevo_depto")
+                nuevo_depto = st.text_input("Departamento", value="", key="input_nuevo_depto")
             
             btn_crear = st.form_submit_button("Guardar Usuario")
             if btn_crear:
