@@ -48,7 +48,6 @@ def obtener_datos(query, engine_tipo="dic", max_retries=3):
                     engine.dispose()
                 except:
                     pass
-                # Forzar recreación de motores si falla la conexión
                 ENGINE_DIC, ENGINE_SCADA = get_engines()
                 engine = ENGINE_DIC if engine_tipo == "dic" else ENGINE_SCADA
                 t.sleep(2)
@@ -150,6 +149,7 @@ with col_der:
 
 placeholder_logs = st.empty()
 placeholder_dest = st.empty()
+placeholder_corrientes = st.empty()
 
 # --- CARGA DE DATOS GENERALES ---
 df_dic = obtener_datos("SELECT * FROM Diccionario_de_pozos WHERE bomba != 'Sin telemetria'", "dic")
@@ -258,11 +258,19 @@ while True:
 
     tags = "', '".join(df_dic['bomba'].tolist())
     df = obtener_datos(f"SELECT r.NAME, h.VALUE, h.FECHA FROM VfiTagNumHistory_Ultimo h JOIN VfiTagRef r ON h.GATEID = r.GATEID WHERE r.NAME IN ('{tags}') AND h.FECHA = (SELECT MAX(FECHA) FROM VfiTagNumHistory_Ultimo WHERE GATEID = h.GATEID)", "scada")
-    tags_aux = [str(t) for col in ['H_arranque', 'H_paro', 'nivel_tanque', 'nivel_arranque_tq', 'nivel_paro_tq', 'voltaje_L1', 'voltaje_L2', 'voltaje_L3'] for t in df_dic[col].dropna().unique()]
-    df_h = obtener_datos(f"SELECT r.NAME, h.VALUE FROM VfiTagNumHistory_Ultimo h JOIN VfiTagRef r ON h.GATEID = r.GATEID WHERE r.NAME IN ('{"', '".join(tags_aux)}') AND h.FECHA = (SELECT MAX(FECHA) FROM VfiTagNumHistory_Ultimo WHERE GATEID = h.GATEID)", "scada")
-    mapa_aux = dict(zip(df_h['NAME'].astype(str), df_h['VALUE']))
+    
+    # Recolectar tags auxiliares incluyendo corriente L1, L2, L3 y amperaje nominal si existen en el diccionario
+    cols_corrientes = ['corriente_L1', 'corriente_L2', 'corriente_L3', 'amperaje_nominal']
+    tags_aux_cols = ['H_arranque', 'H_paro', 'nivel_tanque', 'nivel_arranque_tq', 'nivel_paro_tq', 'voltaje_L1', 'voltaje_L2', 'voltaje_L3'] + [c for c in cols_corrientes if c in df_dic.columns]
+    
+    tags_aux = [str(t) for col in tags_aux_cols for t in df_dic[col].dropna().unique() if str(t).strip() != '']
+    
+    df_h = pd.DataFrame()
+    if tags_aux:
+        df_h = obtener_datos(f"SELECT r.NAME, h.VALUE FROM VfiTagNumHistory_Ultimo h JOIN VfiTagRef r ON h.GATEID = r.GATEID WHERE r.NAME IN ('{"', '".join(tags_aux)}') AND h.FECHA = (SELECT MAX(FECHA) FROM VfiTagNumHistory_Ultimo WHERE GATEID = h.GATEID)", "scada")
+    mapa_aux = dict(zip(df_h['NAME'].astype(str), df_h['VALUE'])) if not df_h.empty else {}
 
-    lista_apg, lista_enc = [], []
+    lista_apg, lista_enc, lista_corrientes_peligro = [], [], []
     ahora_actual = datetime.now(zona_mx)
 
     for _, row in df.iterrows():
@@ -270,9 +278,37 @@ while True:
         if df_match.empty: continue
         info = df_match.iloc[0]
         inc = mapa_inc.get(str(info['Pozos']).replace('-', '').replace(' ', ''), "Sin incidencia")
-        n_tq, n_arr, n_par = float(mapa_aux.get(str(info['nivel_tanque']), 0) or 0), float(mapa_aux.get(str(info['nivel_arranque_tq']), 0) or 0), float(mapa_aux.get(str(info['nivel_paro_tq']), 0) or 0)
-        h_p_val, h_a_val = convertir_a_hora(mapa_aux.get(str(info['H_paro']))), convertir_a_hora(mapa_aux.get(str(info['H_arranque'])))
+        n_tq, n_arr, n_par = float(mapa_aux.get(str(info.get('nivel_tanque', '')), 0) or 0), float(mapa_aux.get(str(info.get('nivel_arranque_tq', '')), 0) or 0), float(mapa_aux.get(str(info.get('nivel_paro_tq', '')), 0) or 0)
+        h_p_val, h_a_val = convertir_a_hora(mapa_aux.get(str(info.get('H_paro', '')))), convertir_a_hora(mapa_aux.get(str(info.get('H_arranque', ''))))
         
+        # Verificación de corrientes (L1, L2, L3)
+        c_l1 = float(mapa_aux.get(str(info.get('corriente_L1', '')), 0) or 0) if 'corriente_L1' in info and pd.notnull(info['corriente_L1']) else 0.0
+        c_l2 = float(mapa_aux.get(str(info.get('corriente_L2', '')), 0) or 0) if 'corriente_L2' in info and pd.notnull(info['corriente_L2']) else 0.0
+        c_l3 = float(mapa_aux.get(str(info.get('corriente_L3', '')), 0) or 0) if 'corriente_L3' in info and pd.notnull(info['corriente_L3']) else 0.0
+        amp_nom = float(info.get('amperaje_nominal', 0) or 0) if 'amperaje_nominal' in info and pd.notnull(info['amperaje_nominal']) else 0.0
+
+        # Criterio de peligro por corriente: si supera un 15% más del nominal, o si alguna supera el umbral crítico por fase
+        # Si no hay amperaje nominal en BD, evaluamos si alguna línea excede significativamente o si se comparan individualmente.
+        # Aquí evaluamos si hay un incremento del 15% respecto al nominal registrado, o bien una subida de corriente general en las fases.
+        en_peligro = False
+        if amp_nom > 0:
+            if c_l1 > (amp_nom * 1.15) or c_l2 > (amp_nom * 1.15) or c_l3 > (amp_nom * 1.15):
+                en_peligro = True
+        else:
+            # Si no hay nominal, evaluamos si el promedio de las fases o alguna fase individual muestra picos elevados (ej. si L1, L2, L3 superan un comportamiento estandar o entre ellas desbalance, o un valor de referencia alto). Como criterio seguro con el 15%, si tenemos un valor base o si cualquiera supera un límite operativo base. Si no se cuenta con nominal fijo, evaluamos un incremento comparativo o disipación. Para cumplir estrictamente el incremento del 15% cuando hay un valor de referencia o promedio:
+            prom_fases = (c_l1 + c_l2 + c_l3) / 3 if (c_l1 + c_l2 + c_l3) > 0 else 0
+            if prom_fases > 0 and (c_l1 > prom_fases * 1.15 or c_l2 > prom_fases * 1.15 or c_l3 > prom_fases * 1.15):
+                en_peligro = True
+
+        if row['VALUE'] != 0 and en_peligro:
+            lista_corrientes_peligro.append({
+                "Pozo": info['Pozos'],
+                "Amperaje L1": f"{c_l1:.2f} A",
+                "Amperaje L2": f"{c_l2:.2f} A",
+                "Amperaje L3": f"{c_l3:.2f} A",
+                "Nominal / Ref": f"{amp_nom:.2f} A" if amp_nom > 0 else "N/D"
+            })
+
         fecha_bd = row['FECHA']
         if pd.notnull(fecha_bd):
             if fecha_bd.tzinfo is None:
@@ -295,13 +331,14 @@ while True:
                 enviar_alerta(info['Pozos'], f"{n_tq:.2f}", f"{n_arr:.2f}", row['FECHA'].time(), h_p_val, h_a_val, razon, row['FECHA'].time().strftime('%H:%M:%S'))
                 st.session_state.alertas_enviadas[info['Pozos']] = ahora_actual
             
-            lista_apg.append({"Pozo": info['Pozos'], "Estatus_Paro": estatus, "Fecha": row['FECHA'].date(), "Hora": row['FECHA'].time(), "H_Paro": h_p_val, "H_Arranque": h_a_val, "Incidencia": inc, "Nivel_Tanque": f"{n_tq:.2f}" if n_tq > 0 else "Directo a red", "Nivel_Arranque": f"{n_arr:.2f}" if n_arr > 0 else "", "Nivel_Paro": f"{n_par:.2f}" if n_par > 0 else "", "V_L1": f"{float(mapa_aux.get(str(info['voltaje_L1']), 0)):.2f}", "V_L2": f"{float(mapa_aux.get(str(info['voltaje_L2']), 0)):.2f}", "V_L3": f"{float(mapa_aux.get(str(info['voltaje_L3']), 0)):.2f}", "TS": row['FECHA']})
+            lista_apg.append({"Pozo": info['Pozos'], "Estatus_Paro": estatus, "Fecha": row['FECHA'].date(), "Hora": row['FECHA'].time(), "H_Paro": h_p_val, "H_Arranque": h_a_val, "Incidencia": inc, "Nivel_Tanque": f"{n_tq:.2f}" if n_tq > 0 else "Directo a red", "Nivel_Arranque": f"{n_arr:.2f}" if n_arr > 0 else "", "Nivel_Paro": f"{n_par:.2f}" if n_par > 0 else "", "V_L1": f"{float(mapa_aux.get(str(info.get('voltaje_L1','')), 0)):.2f}", "V_L2": f"{float(mapa_aux.get(str(info.get('voltaje_L2','')), 0)):.2f}", "V_L3": f"{float(mapa_aux.get(str(info.get('voltaje_L3','')), 0)):.2f}", "TS": row['FECHA']})
         else:
             if info['Pozos'] in st.session_state.alertas_enviadas: del st.session_state.alertas_enviadas[info['Pozos']]
             lista_enc.append({"Pozo": info['Pozos'], "Fecha": row['FECHA'].date(), "Hora": row['FECHA'].time(), "TS": row['FECHA']})
 
     df_final = pd.DataFrame(lista_apg).sort_values(by='TS', ascending=False) if lista_apg else pd.DataFrame()
     df_enc_full = pd.DataFrame(lista_enc).sort_values(by='TS', ascending=False) if lista_enc else pd.DataFrame()
+    df_peligro_corr = pd.DataFrame(lista_corrientes_peligro) if lista_corrientes_peligro else pd.DataFrame()
     
     with placeholder_apg:
         if not df_final.empty:
@@ -317,6 +354,13 @@ while True:
             df_mostrar = df_enc_full[df_enc_full['Pozo'].astype(str).str.contains(st.session_state.busqueda_pozo, case=False, na=False)]
         if not df_mostrar.empty: 
             st.dataframe(df_mostrar.drop(columns=['TS']), use_container_width=True, hide_index=True)
+
+    with placeholder_corrientes:
+        st.subheader("⚡ Alerta de Pozos en Peligro por Incremento de Corriente (> 15%)")
+        if not df_peligro_corr.empty:
+            st.dataframe(df_peligro_corr, use_container_width=True, hide_index=True)
+        else:
+            st.success("No hay pozos en riesgo por sobrecorriente en este momento.")
             
     with placeholder_logs:
         st.subheader("📋 Registro de Alertas")
