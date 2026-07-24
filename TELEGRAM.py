@@ -148,8 +148,8 @@ except:
 
 st.divider()
 
-# --- FRAGMENTO DE MONITOREO Y TABLAS DE POZOS ---
-@st.fragment(run_every=30)
+# --- FRAGMENTO DE MONITOREO Y TABLAS DE POZOS (Actualización cada 1 minuto) ---
+@st.fragment(run_every=60)
 def monitor_pozos_fragment():
     col_izq, col_der = st.columns([0.80, 0.20])
     with col_izq:
