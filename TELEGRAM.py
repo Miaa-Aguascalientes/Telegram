@@ -148,7 +148,7 @@ except:
 
 st.divider()
 
-# --- FRAGMENTO DE MONITOREO Y TABLAS DE POZOS (ACTUALIZACIÓN LIMPIA SIN PARPAEO) ---
+# --- FRAGMENTO DE MONITOREO Y TABLAS DE POZOS ---
 @st.fragment(run_every=30)
 def monitor_pozos_fragment():
     col_izq, col_der = st.columns([0.80, 0.20])
@@ -248,6 +248,7 @@ def monitor_pozos_fragment():
                     "A2 (Act)": f"{a2_val:.2f} A",
                     "A3 (Act)": f"{a3_val:.2f} A",
                     "Desb. Max (%)": f"{max_desb:.2f}%",
+                    "val_num_desb": max_desb,
                     "Fecha": row['FECHA'].date(),
                     "Hora": row['FECHA'].time()
                 })
@@ -281,9 +282,14 @@ def monitor_pozos_fragment():
 
     df_final = pd.DataFrame(lista_apg).sort_values(by='TS', ascending=False) if lista_apg else pd.DataFrame()
     df_enc_full = pd.DataFrame(lista_enc).sort_values(by='TS', ascending=False) if lista_enc else pd.DataFrame()
-    df_enc_amps = pd.DataFrame(lista_corrientes_encendidos).sort_values(by='Pozo') if lista_corrientes_encendidos else pd.DataFrame()
+    
+    # ORDENAMIENTO DE AMPERAJES: Mayor a menor usando la columna numérica interna de desbalance
+    df_enc_amps = pd.DataFrame(lista_corrientes_encendidos)
+    if not df_enc_amps.empty:
+        df_enc_amps = df_enc_amps.sort_values(by='val_num_desb', ascending=False).drop(columns=['val_num_desb'])
+    else:
+        df_enc_amps = pd.DataFrame()
 
-    # RENDERIZADO DIRECTO (Sin placeholders vacíos que causen parpadeos)
     with col_izq:
         if not df_final.empty:
             def color_fila(row):
@@ -315,12 +321,11 @@ def monitor_pozos_fragment():
     st.subheader("📋 Registro de Alertas")
     st.markdown(f'<div class="log-console">{"<br>".join(reversed(st.session_state.logs))}</div>', unsafe_allow_html=True)
 
-# Ejecución del fragmento limpio
 monitor_pozos_fragment()
 
 st.divider()
 
-# --- GESTIÓN DE DESTINATARIOS (DESPUÉS DE LAS TABLAS) ---
+# --- GESTIÓN DE DESTINATARIOS ---
 st.subheader("👥 Gestión de Destinatarios de Alertas (Telegram)")
 
 with st.expander("➕ Añadir nuevo destinatario"):
