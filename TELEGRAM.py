@@ -149,7 +149,6 @@ with col_der:
 
 placeholder_logs = st.empty()
 placeholder_dest = st.empty()
-placeholder_corrientes = st.empty()
 placeholder_enc_amps = st.empty()
 
 # --- CARGA DE DATOS GENERALES ---
@@ -248,7 +247,7 @@ with placeholder_dest.container():
                 st.session_state.user_to_delete = None
                 st.rerun()
 
-# --- CICLO ÚNICO DE EJECUCIÓN ---
+# --- CICLO DE DATOS Y MONITOREO CON AUTOREFRESH ---
 try:
     df_inc = obtener_datos("SELECT NUM_POZO, DIAGNOSTICO_FALLA FROM vw_incidencias_en_pozos WHERE ESTATUS != 'Cerrada'", "scada")
     df_inc['KEY'] = df_inc['NUM_POZO'].astype(str).str.replace(r'[- ]', '', regex=True)
@@ -278,8 +277,7 @@ if tags_aux:
 
 mapa_aux = dict(zip(df_h['NAME'].astype(str), df_h['VALUE'])) if not df_h.empty else {}
 
-# Consulta de corrientes históricas usando la tabla correcta en minúsculas: vfitagnumhistory
-lista_corrientes_desbalance = []
+# Consulta de corrientes usando el ÚLTIMO valor registrado en VfiTagNumHistory_Ultimo
 lista_corrientes_encendidos = []
 
 tags_corr_list = []
@@ -288,29 +286,28 @@ for _, d_row in df_dic.iterrows():
         if c_col in d_row and pd.notnull(d_row[c_col]) and str(d_row[c_col]).strip() != '':
             tags_corr_list.append(str(d_row[c_col]))
 
-mapa_semanal_prom = {}
+mapa_actual_prom = {}
 tags_corr_unicos = list(set(tags_corr_list))
 if tags_corr_unicos:
     lotes_corr = [tags_corr_unicos[i:i + 100] for i in range(0, len(tags_corr_unicos), 100)]
-    lista_df_hist = []
-    fecha_limite = (datetime.now(zona_mx) - timedelta(days=7)).strftime('%Y-%m-%d %H:%M:%S')
+    lista_df_act = []
     
     for lote in lotes_corr:
         tags_str_sql = "', '".join(lote)
-        query_historica = f"""
-            SELECT r.NAME, AVG(h.VALUE) as PROMEDIO_VAL 
-            FROM vfitagnumhistory h 
+        query_actual = f"""
+            SELECT r.NAME, h.VALUE as VALOR_ACTUAL 
+            FROM VfiTagNumHistory_Ultimo h 
             JOIN VfiTagRef r ON h.GATEID = r.GATEID 
-            WHERE r.NAME IN ('{tags_str_sql}') AND h.FECHA >= '{fecha_limite}' 
-            GROUP BY r.NAME
+            WHERE r.NAME IN ('{tags_str_sql}') 
+              AND h.FECHA = (SELECT MAX(FECHA) FROM VfiTagNumHistory_Ultimo WHERE GATEID = h.GATEID)
         """
-        df_hist_lote = obtener_datos(query_historica, "scada")
-        if not df_hist_lote.empty:
-            lista_df_hist.append(df_hist_lote)
+        df_act_lote = obtener_datos(query_actual, "scada")
+        if not df_act_lote.empty:
+            lista_df_act.append(df_act_lote)
     
-    if lista_df_hist:
-        df_hist_semanal = pd.concat(lista_df_hist, ignore_index=True)
-        mapa_semanal_prom = dict(zip(df_hist_semanal['NAME'].astype(str), df_hist_semanal['PROMEDIO_VAL']))
+    if lista_df_act:
+        df_act_ultimos = pd.concat(lista_df_act, ignore_index=True)
+        mapa_actual_prom = dict(zip(df_act_ultimos['NAME'].astype(str), df_act_ultimos['VALOR_ACTUAL']))
 
 lista_apg, lista_enc = [], []
 ahora_actual = datetime.now(zona_mx)
@@ -327,9 +324,9 @@ for _, row in df.iterrows():
     tag_l2 = str(info.get('amperaje_L2', ''))
     tag_l3 = str(info.get('amperaje_L3', ''))
     
-    a1_val = float(mapa_semanal_prom.get(tag_l1, 0) or 0) if tag_l1 else 0.0
-    a2_val = float(mapa_semanal_prom.get(tag_l2, 0) or 0) if tag_l2 else 0.0
-    a3_val = float(mapa_semanal_prom.get(tag_l3, 0) or 0) if tag_l3 else 0.0
+    a1_val = float(mapa_actual_prom.get(tag_l1, 0) or 0) if tag_l1 else 0.0
+    a2_val = float(mapa_actual_prom.get(tag_l2, 0) or 0) if tag_l2 else 0.0
+    a3_val = float(mapa_actual_prom.get(tag_l3, 0) or 0) if tag_l3 else 0.0
     
     if a1_val > 0 or a2_val > 0 or a3_val > 0:
         prom_fases = (a1_val + a2_val + a3_val) / 3.0 if (a1_val + a2_val + a3_val) > 0 else 1.0
@@ -341,21 +338,12 @@ for _, row in df.iterrows():
         if row['VALUE'] != 0:
             lista_corrientes_encendidos.append({
                 "Pozo": info['Pozos'],
-                "A1 (Prom)": f"{a1_val:.2f} A",
-                "A2 (Prom)": f"{a2_val:.2f} A",
-                "A3 (Prom)": f"{a3_val:.2f} A",
+                "A1 (Act)": f"{a1_val:.2f} A",
+                "A2 (Act)": f"{a2_val:.2f} A",
+                "A3 (Act)": f"{a3_val:.2f} A",
                 "Desb. Max (%)": f"{max_desb:.2f}%",
                 "Fecha": row['FECHA'].date(),
                 "Hora": row['FECHA'].time()
-            })
-
-        if max_desb >= 11.0:
-            lista_corrientes_desbalance.append({
-                "Pozo": info['Pozos'],
-                "A1 (Prom)": f"{a1_val:.2f} A",
-                "A2 (Prom)": f"{a2_val:.2f} A",
-                "A3 (Prom)": f"{a3_val:.2f} A",
-                "Desb. Max (%)": f"{max_desb:.2f}%"
             })
 
     fecha_bd = row['FECHA']
@@ -388,7 +376,6 @@ for _, row in df.iterrows():
 df_final = pd.DataFrame(lista_apg).sort_values(by='TS', ascending=False) if lista_apg else pd.DataFrame()
 df_enc_full = pd.DataFrame(lista_enc).sort_values(by='TS', ascending=False) if lista_enc else pd.DataFrame()
 df_enc_amps = pd.DataFrame(lista_corrientes_encendidos).sort_values(by='Pozo') if lista_corrientes_encendidos else pd.DataFrame()
-df_desb_corr = pd.DataFrame(lista_corrientes_desbalance) if lista_corrientes_desbalance else pd.DataFrame()
 
 with placeholder_apg:
     if not df_final.empty:
@@ -409,15 +396,8 @@ with placeholder_enc:
     else:
         st.info("No hay pozos encendidos registrados.")
 
-with placeholder_corrientes:
-    st.subheader("⚡ Análisis de Desbalance de Corrientes (Promedio Histórico - Umbral > 11%)")
-    if not df_desb_corr.empty:
-        st.dataframe(df_desb_corr, use_container_width=True, hide_index=True)
-    else:
-        st.success("No hay pozos con desbalance de corriente superior al 11%.")
-
 with placeholder_enc_amps:
-    st.subheader("📊 Pozos Encendidos y sus Amperajes (Promedio Histórico)")
+    st.subheader("📊 Pozos Encendidos y sus Amperajes (Último Valor Registrado)")
     df_mostrar_amps = df_enc_amps
     if st.session_state.busqueda_pozo and not df_enc_amps.empty:
         df_mostrar_amps = df_enc_amps[df_enc_amps['Pozo'].astype(str).str.contains(st.session_state.busqueda_pozo, case=False, na=False)]
@@ -429,3 +409,7 @@ with placeholder_enc_amps:
 with placeholder_logs:
     st.subheader("📋 Registro de Alertas")
     st.markdown(f'<div class="log-console">{"<br>".join(reversed(st.session_state.logs))}</div>', unsafe_allow_html=True)
+
+# --- AUTOREFRESH CADA 30 SEGUNDOS ---
+t.sleep(30)
+st.rerun()
