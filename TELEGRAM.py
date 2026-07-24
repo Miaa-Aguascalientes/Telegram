@@ -260,18 +260,27 @@ while True:
     tags = "', '".join(df_dic['bomba'].tolist())
     df = obtener_datos(f"SELECT r.NAME, h.VALUE, h.FECHA FROM VfiTagNumHistory_Ultimo h JOIN VfiTagRef r ON h.GATEID = r.GATEID WHERE r.NAME IN ('{tags}') AND h.FECHA = (SELECT MAX(FECHA) FROM VfiTagNumHistory_Ultimo WHERE GATEID = h.GATEID)", "scada")
     
-    # Recolectar tags auxiliares incluyendo amperaje_L1, amperaje_L2, amperaje_L3 para análisis de desbalance histórico semanal
+    # Recolectar tags auxiliares incluyendo amperaje_L1, amperaje_L2, amperaje_L3 y realizando fragmentación por lotes para evitar sobrepasar límites de parámetros en MySQL
     cols_corrientes = ['amperaje_L1', 'amperaje_L2', 'amperaje_L3']
     tags_aux_cols = ['H_arranque', 'H_paro', 'nivel_tanque', 'nivel_arranque_tq', 'nivel_paro_tq', 'voltaje_L1', 'voltaje_L2', 'voltaje_L3'] + [c for c in cols_corrientes if c in df_dic.columns]
     
-    tags_aux = [str(t) for col in tags_aux_cols for t in df_dic[col].dropna().unique() if str(t).strip() != '']
+    tags_aux = list(set([str(t) for col in tags_aux_cols for t in df_dic[col].dropna().unique() if str(t).strip() != '']))
     
     df_h = pd.DataFrame()
     if tags_aux:
-        df_h = obtener_datos(f"SELECT r.NAME, h.VALUE FROM VfiTagNumHistory_Ultimo h JOIN VfiTagRef r ON h.GATEID = r.GATEID WHERE r.NAME IN ('{"', '".join(tags_aux)}') AND h.FECHA = (SELECT MAX(FECHA) FROM VfiTagNumHistory_Ultimo WHERE GATEID = h.GATEID)", "scada")
+        lotes_aux = [tags_aux[i:i + 100] for i in range(0, len(tags_aux), 100)]
+        lista_df_h = []
+        for lote in lotes_aux:
+            tags_str_lote = "', '".join(lote)
+            df_lote = obtener_datos(f"SELECT r.NAME, h.VALUE FROM VfiTagNumHistory_Ultimo h JOIN VfiTagRef r ON h.GATEID = r.GATEID WHERE r.NAME IN ('{tags_str_lote}') AND h.FECHA = (SELECT MAX(FECHA) FROM VfiTagNumHistory_Ultimo WHERE GATEID = h.GATEID)", "scada")
+            if not df_lote.empty:
+                lista_df_h.append(df_lote)
+        if lista_df_h:
+            df_h = pd.concat(lista_df_h, ignore_index=True)
+
     mapa_aux = dict(zip(df_h['NAME'].astype(str), df_h['VALUE'])) if not df_h.empty else {}
 
-    # Consulta de promedios históricos de la última semana de VfiTagNumHistory para las corrientes de cada pozo
+    # Consulta por lotes de promedios históricos de la última semana de VfiTagNumHistory para las corrientes de cada pozo
     lista_corrientes_desbalance = []
     lista_corrientes_encendidos = []
     fecha_hace_7_dias = datetime.now(zona_mx) - timedelta(days=7)
@@ -283,18 +292,26 @@ while True:
                 tags_corr_list.append(str(d_row[c_col]))
     
     mapa_semanal_prom = {}
-    if tags_corr_list:
-        tags_str_sql = "', '".join(list(set(tags_corr_list)))
-        query_semanal = f"""
-            SELECT r.NAME, AVG(h.VALUE) as PROMEDIO_VAL
-            FROM VfiTagNumHistory h 
-            JOIN VfiTagRef r ON h.GATEID = r.GATEID 
-            WHERE r.NAME IN ('{tags_str_sql}') 
-              AND h.FECHA >= '{fecha_hace_7_dias.strftime('%Y-%m-%d %H:%M:%S')}'
-            GROUP BY r.NAME
-        """
-        df_hist_semanal = obtener_datos(query_semanal, "scada")
-        if not df_hist_semanal.empty:
+    tags_corr_unicos = list(set(tags_corr_list))
+    if tags_corr_unicos:
+        lotes_corr = [tags_corr_unicos[i:i + 100] for i in range(0, len(tags_corr_unicos), 100)]
+        lista_df_hist = []
+        for lote in lotes_corr:
+            tags_str_sql = "', '".join(lote)
+            query_semanal = f"""
+                SELECT r.NAME, AVG(h.VALUE) as PROMEDIO_VAL
+                FROM VfiTagNumHistory h 
+                JOIN VfiTagRef r ON h.GATEID = r.GATEID 
+                WHERE r.NAME IN ('{tags_str_sql}') 
+                  AND h.FECHA >= '{fecha_hace_7_dias.strftime('%Y-%m-%d %H:%M:%S')}'
+                GROUP BY r.NAME
+            """
+            df_hist_lote = obtener_datos(query_semanal, "scada")
+            if not df_hist_lote.empty:
+                lista_df_hist.append(df_hist_lote)
+        
+        if lista_df_hist:
+            df_hist_semanal = pd.concat(lista_df_hist, ignore_index=True)
             mapa_semanal_prom = dict(zip(df_hist_semanal['NAME'].astype(str), df_hist_semanal['PROMEDIO_VAL']))
 
     lista_apg, lista_enc = [], []
@@ -384,6 +401,7 @@ while True:
                 return [f'color: {c}'] * len(row)
             st.dataframe(df_final.drop(columns=['TS']).style.apply(color_fila, axis=1).set_properties(**{'text-align': 'center'}), use_container_width=True, hide_index=True)
     
+    # 1. PRIMERA TABLA DE POZOS ENCENDIDOS (COMO ESTABA ORIGINALMENTE: SÓLO POZO, FECHA Y HORA) DEJADA ARRIBA
     with placeholder_enc:
         df_mostrar = df_enc_full
         if st.session_state.busqueda_pozo:
@@ -398,6 +416,7 @@ while True:
         else:
             st.success("No hay pozos con desbalance de corriente superior al 11% en el promedio semanal.")
 
+    # 2. SEGUNDA TABLA (LA NUEVA DE POZOS ENCENDIDOS CON AMPERAJES) COLOCADA EN LA PARTE DE ABAJO
     with placeholder_enc_amps:
         st.subheader("📊 Pozos Encendidos y sus Amperajes (Promedio Semanal)")
         df_mostrar_amps = df_enc_amps
