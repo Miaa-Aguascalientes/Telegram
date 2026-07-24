@@ -272,6 +272,7 @@ while True:
 
     # Consulta de promedios históricos de la última semana de VfiTagNumHistory para las corrientes de cada pozo
     lista_corrientes_desbalance = []
+    lista_corrientes_encendidos = []
     fecha_hace_7_dias = datetime.now(zona_mx) - timedelta(days=7)
     
     tags_corr_list = []
@@ -306,7 +307,6 @@ while True:
         n_tq, n_arr, n_par = float(mapa_aux.get(str(info.get('nivel_tanque', '')), 0) or 0), float(mapa_aux.get(str(info.get('nivel_arranque_tq', '')), 0) or 0), float(mapa_aux.get(str(info.get('nivel_paro_tq', '')), 0) or 0)
         h_p_val, h_a_val = convertir_a_hora(mapa_aux.get(str(info.get('H_paro', '')))), convertir_a_hora(mapa_aux.get(str(info.get('H_arranque', ''))))
         
-        # Obtener valores semanales promedio de las tres líneas de amperaje para el análisis de desbalance (> 11%)
         tag_l1 = str(info.get('corriente_L1', ''))
         tag_l2 = str(info.get('corriente_L2', ''))
         tag_l3 = str(info.get('corriente_L3', ''))
@@ -317,12 +317,23 @@ while True:
         
         if a1_val > 0 or a2_val > 0 or a3_val > 0:
             prom_fases = (a1_val + a2_val + a3_val) / 3.0 if (a1_val + a2_val + a3_val) > 0 else 1.0
-            # Calcular desbalance máximo de cualquiera de las líneas respecto al promedio o entre ellas (> 11%)
             desb_l1 = abs(a1_val - prom_fases) / prom_fases * 100 if prom_fases > 0 else 0.0
             desb_l2 = abs(a2_val - prom_fases) / prom_fases * 100 if prom_fases > 0 else 0.0
             desb_l3 = abs(a3_val - prom_fases) / prom_fases * 100 if prom_fases > 0 else 0.0
             max_desb = max(desb_l1, desb_l2, desb_l3)
             
+            # Si el pozo está encendido, lo agregamos a la tabla de pozos encendidos con sus amperajes y desbalance
+            if row['VALUE'] != 0:
+                lista_corrientes_encendidos.append({
+                    "Pozo": info['Pozos'],
+                    "A1 (Avg)": f"{a1_val:.2f} A",
+                    "A2 (Avg)": f"{a2_val:.2f} A",
+                    "A3 (Avg)": f"{a3_val:.2f} A",
+                    "Desb. Max (%)": f"{max_desb:.2f}%",
+                    "Fecha": row['FECHA'].date(),
+                    "Hora": row['FECHA'].time()
+                })
+
             if max_desb >= 11.0:
                 lista_corrientes_desbalance.append({
                     "Pozo": info['Pozos'],
@@ -360,7 +371,7 @@ while True:
             lista_enc.append({"Pozo": info['Pozos'], "Fecha": row['FECHA'].date(), "Hora": row['FECHA'].time(), "TS": row['FECHA']})
 
     df_final = pd.DataFrame(lista_apg).sort_values(by='TS', ascending=False) if lista_apg else pd.DataFrame()
-    df_enc_full = pd.DataFrame(lista_enc).sort_values(by='TS', ascending=False) if lista_enc else pd.DataFrame()
+    df_enc_amps = pd.DataFrame(lista_corrientes_encendidos).sort_values(by='Pozo') if lista_corrientes_encendidos else pd.DataFrame()
     df_desb_corr = pd.DataFrame(lista_corrientes_desbalance) if lista_corrientes_desbalance else pd.DataFrame()
     
     with placeholder_apg:
@@ -372,14 +383,16 @@ while True:
             st.dataframe(df_final.drop(columns=['TS']).style.apply(color_fila, axis=1).set_properties(**{'text-align': 'center'}), use_container_width=True, hide_index=True)
     
     with placeholder_enc:
-        df_mostrar = df_enc_full
-        if st.session_state.busqueda_pozo:
-            df_mostrar = df_enc_full[df_enc_full['Pozo'].astype(str).str.contains(st.session_state.busqueda_pozo, case=False, na=False)]
+        df_mostrar = df_enc_amps
+        if st.session_state.busqueda_pozo and not df_enc_amps.empty:
+            df_mostrar = df_enc_amps[df_enc_amps['Pozo'].astype(str).str.contains(st.session_state.busqueda_pozo, case=False, na=False)]
         if not df_mostrar.empty: 
-            st.dataframe(df_mostrar.drop(columns=['TS']), use_container_width=True, hide_index=True)
+            st.dataframe(df_mostrar, use_container_width=True, hide_index=True)
+        else:
+            st.info("No hay pozos encendidos con datos de corriente disponibles.")
 
     with placeholder_corrientes:
-        st.subheader("⚡ Análisis de Desbalance de Corrientes (Promedio Última Semana)")
+        st.subheader("⚡ Análisis de Desbalance de Corrientes (Promedio Última Semana - Umbral > 11%)")
         if not df_desb_corr.empty:
             st.dataframe(df_desb_corr, use_container_width=True, hide_index=True)
         else:
