@@ -223,7 +223,6 @@ with placeholder_dest.container():
     else:
         st.info("No se encontraron registros en Diccionario_telegram.")
 
-    # --- SECCIÓN DIRECTA DE CONFIRMACIÓN CON VALIDACIÓN DE PALABRA ---
     if st.session_state.user_to_delete is not None:
         uid_Target = st.session_state.user_to_delete
         st.warning(f"⚠️ Estás a punto de eliminar al usuario con ID: {uid_Target}. Esta acción no se puede deshacer.")
@@ -249,7 +248,7 @@ with placeholder_dest.container():
                 st.session_state.user_to_delete = None
                 st.rerun()
 
-# --- CICLO ÚNICO DE EJECUCIÓN (SIN WHILE TRUE BLOQUEANTE) ---
+# --- CICLO ÚNICO DE EJECUCIÓN ---
 try:
     df_inc = obtener_datos("SELECT NUM_POZO, DIAGNOSTICO_FALLA FROM vw_incidencias_en_pozos WHERE ESTATUS != 'Cerrada'", "scada")
     df_inc['KEY'] = df_inc['NUM_POZO'].astype(str).str.replace(r'[- ]', '', regex=True)
@@ -259,7 +258,7 @@ except: mapa_inc = {}
 tags = "', '".join(df_dic['bomba'].tolist())
 df = obtener_datos(f"SELECT r.NAME, h.VALUE, h.FECHA FROM VfiTagNumHistory_Ultimo h JOIN VfiTagRef r ON h.GATEID = r.GATEID WHERE r.NAME IN ('{tags}') AND h.FECHA = (SELECT MAX(FECHA) FROM VfiTagNumHistory_Ultimo WHERE GATEID = h.GATEID)", "scada")
 
-# Recolectar tags auxiliares incluyendo amperaje_L1, amperaje_L2, amperaje_L3 y realizando fragmentación por lotes para evitar sobrepasar límites de parámetros en MySQL
+# Recolectar tags auxiliares
 cols_corrientes = ['amperaje_L1', 'amperaje_L2', 'amperaje_L3']
 tags_aux_cols = ['H_arranque', 'H_paro', 'nivel_tanque', 'nivel_arranque_tq', 'nivel_paro_tq', 'voltaje_L1', 'voltaje_L2', 'voltaje_L3'] + [c for c in cols_corrientes if c in df_dic.columns]
 
@@ -279,10 +278,9 @@ if tags_aux:
 
 mapa_aux = dict(zip(df_h['NAME'].astype(str), df_h['VALUE'])) if not df_h.empty else {}
 
-# Consulta por lotes de promedios históricos de la última semana de VfiTagNumHistory para las corrientes de cada pozo
+# Consulta de corrientes históricas usando la tabla correcta en minúsculas: vfitagnumhistory
 lista_corrientes_desbalance = []
 lista_corrientes_encendidos = []
-fecha_hace_7_dias = datetime.now(zona_mx) - timedelta(days=7)
 
 tags_corr_list = []
 for _, d_row in df_dic.iterrows():
@@ -295,17 +293,18 @@ tags_corr_unicos = list(set(tags_corr_list))
 if tags_corr_unicos:
     lotes_corr = [tags_corr_unicos[i:i + 100] for i in range(0, len(tags_corr_unicos), 100)]
     lista_df_hist = []
+    fecha_limite = (datetime.now(zona_mx) - timedelta(days=7)).strftime('%Y-%m-%d %H:%M:%S')
+    
     for lote in lotes_corr:
         tags_str_sql = "', '".join(lote)
-        query_semanal = f"""
-            SELECT r.NAME, AVG(h.VALUE) as PROMEDIO_VAL
-            FROM VfiTagNumHistory h 
+        query_historica = f"""
+            SELECT r.NAME, AVG(h.VALUE) as PROMEDIO_VAL 
+            FROM vfitagnumhistory h 
             JOIN VfiTagRef r ON h.GATEID = r.GATEID 
-            WHERE r.NAME IN ('{tags_str_sql}') 
-              AND h.FECHA >= '{fecha_hace_7_dias.strftime('%Y-%m-%d %H:%M:%S')}'
+            WHERE r.NAME IN ('{tags_str_sql}') AND h.FECHA >= '{fecha_limite}' 
             GROUP BY r.NAME
         """
-        df_hist_lote = obtener_datos(query_semanal, "scada")
+        df_hist_lote = obtener_datos(query_historica, "scada")
         if not df_hist_lote.empty:
             lista_df_hist.append(df_hist_lote)
     
@@ -342,9 +341,9 @@ for _, row in df.iterrows():
         if row['VALUE'] != 0:
             lista_corrientes_encendidos.append({
                 "Pozo": info['Pozos'],
-                "A1 (Avg)": f"{a1_val:.2f} A",
-                "A2 (Avg)": f"{a2_val:.2f} A",
-                "A3 (Avg)": f"{a3_val:.2f} A",
+                "A1 (Prom)": f"{a1_val:.2f} A",
+                "A2 (Prom)": f"{a2_val:.2f} A",
+                "A3 (Prom)": f"{a3_val:.2f} A",
                 "Desb. Max (%)": f"{max_desb:.2f}%",
                 "Fecha": row['FECHA'].date(),
                 "Hora": row['FECHA'].time()
@@ -353,10 +352,10 @@ for _, row in df.iterrows():
         if max_desb >= 11.0:
             lista_corrientes_desbalance.append({
                 "Pozo": info['Pozos'],
-                "A1 (Avg)": f"{a1_val:.2f} A",
-                "A2 (Avg)": f"{a2_val:.2f} A",
-                "A3 (Avg)": f"{a3_val:.2f} A",
-                "Desb. A1 (%)": f"{max_desb:.2f}%"
+                "A1 (Prom)": f"{a1_val:.2f} A",
+                "A2 (Prom)": f"{a2_val:.2f} A",
+                "A3 (Prom)": f"{a3_val:.2f} A",
+                "Desb. Max (%)": f"{max_desb:.2f}%"
             })
 
     fecha_bd = row['FECHA']
@@ -411,14 +410,14 @@ with placeholder_enc:
         st.info("No hay pozos encendidos registrados.")
 
 with placeholder_corrientes:
-    st.subheader("⚡ Análisis de Desbalance de Corrientes (Promedio Última Semana - Umbral > 11%)")
+    st.subheader("⚡ Análisis de Desbalance de Corrientes (Promedio Histórico - Umbral > 11%)")
     if not df_desb_corr.empty:
         st.dataframe(df_desb_corr, use_container_width=True, hide_index=True)
     else:
-        st.success("No hay pozos con desbalance de corriente superior al 11% en el promedio semanal.")
+        st.success("No hay pozos con desbalance de corriente superior al 11%.")
 
 with placeholder_enc_amps:
-    st.subheader("📊 Pozos Encendidos y sus Amperajes (Promedio Semanal)")
+    st.subheader("📊 Pozos Encendidos y sus Amperajes (Promedio Histórico)")
     df_mostrar_amps = df_enc_amps
     if st.session_state.busqueda_pozo and not df_enc_amps.empty:
         df_mostrar_amps = df_enc_amps[df_enc_amps['Pozo'].astype(str).str.contains(st.session_state.busqueda_pozo, case=False, na=False)]
