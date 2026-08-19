@@ -82,6 +82,18 @@ def es_periodo_de_paro_programado(t_par, t_arr):
     if t_par < t_arr: return t_par <= ahora <= t_arr
     else: return ahora >= t_par or ahora <= t_arr
 
+def es_hora_cercana_a_transicion(h_paro, h_arranque, margen_minutos=5):
+    """Verifica si la hora actual está muy cerca del horario de paro o arranque programado."""
+    ahora = datetime.now(zona_mx).time()
+    ahora_dt = datetime.combine(datetime.today(), ahora)
+    
+    for h_prog in [h_paro, h_arranque]:
+        if h_prog and h_prog != time(0, 0):
+            prog_dt = datetime.combine(datetime.today(), h_prog)
+            if abs((ahora_dt - prog_dt).total_seconds()) <= (margen_minutos * 60):
+                return True
+    return False
+
 def registrar_cambio_estado():
     estado = "ACTIVADO" if st.session_state.alertas_activas else "DESACTIVADO"
     msg = f"[{datetime.now(zona_mx).strftime('%H:%M:%S')}] Servicio de alertas {estado}"
@@ -271,7 +283,17 @@ def monitor_pozos_fragment():
             else: 
                 estatus, razon = "❌ Estatus desconocido", "Estatus desconocido"
             
-            if (st.session_state.alertas_activas and fecha_bd.date() == ahora_actual.date() and (ahora_actual - fecha_bd) >= timedelta(hours=3.5) and inc == "Sin incidencia" and razon != "Operación normal" and info['Pozos'] not in st.session_state.alertas_enviadas):
+            # Validación para evitar enviar alerta si el pozo está en su ventana de arranque/paro programado
+            en_transicion_horario = es_hora_cercana_a_transicion(h_p_val, h_a_val, margen_minutos=10)
+
+            if (st.session_state.alertas_activas and 
+                not en_transicion_horario and 
+                fecha_bd.date() == ahora_actual.date() and 
+                (ahora_actual - fecha_bd) >= timedelta(hours=3.5) and 
+                inc == "Sin incidencia" and 
+                razon != "Operación normal" and 
+                info['Pozos'] not in st.session_state.alertas_enviadas):
+                
                 enviar_alerta(info['Pozos'], f"{n_tq:.2f}", f"{n_arr:.2f}", row['FECHA'].time(), h_p_val, h_a_val, razon, row['FECHA'].time().strftime('%H:%M:%S'))
                 st.session_state.alertas_enviadas[info['Pozos']] = ahora_actual
             
